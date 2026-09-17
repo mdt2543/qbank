@@ -1,57 +1,51 @@
-import { DeployButton } from "@/components/deploy-button";
-import { EnvVarWarning } from "@/components/env-var-warning";
-import { AuthButton } from "@/components/auth-button";
-import { Hero } from "@/components/hero";
-import { ThemeSwitcher } from "@/components/theme-switcher";
-import { ConnectSupabaseSteps } from "@/components/tutorial/connect-supabase-steps";
-import { SignUpUserSteps } from "@/components/tutorial/sign-up-user-steps";
-import { hasEnvVars } from "@/lib/utils";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { Suspense } from "react";
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
+
+  const { data: qbanks, error } = await supabase
+    .from("qbanks")
+    .select("slug, title, description");
+
+  const { count } = await supabase
+    .from("v_question")
+    .select("*", { count: "exact", head: true });
+
   return (
-    <main className="min-h-screen flex flex-col items-center">
-      <div className="flex-1 w-full flex flex-col gap-20 items-center">
-        <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16">
-          <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
-            <div className="flex gap-5 items-center font-semibold">
-              <Link href={"/"}>Next.js Supabase Starter</Link>
-              <div className="flex items-center gap-2">
-                <DeployButton />
-              </div>
-            </div>
-            {!hasEnvVars ? (
-              <EnvVarWarning />
-            ) : (
-              <Suspense>
-                <AuthButton />
-              </Suspense>
-            )}
-          </div>
-        </nav>
-        <div className="flex-1 flex flex-col gap-20 max-w-5xl p-5">
-          <Hero />
-          <main className="flex-1 flex flex-col gap-6 px-4">
-            <h2 className="font-medium text-xl mb-4">Next steps</h2>
-            {hasEnvVars ? <SignUpUserSteps /> : <ConnectSupabaseSteps />}
-          </main>
-        </div>
+    <main className="mx-auto max-w-2xl px-6 py-16">
+      <h1 className="text-2xl font-semibold">Question banks</h1>
+      <p className="mt-1 text-sm text-gray-500">Signed in as {user.email}</p>
 
-        <footer className="w-full flex items-center justify-center border-t mx-auto text-center text-xs gap-8 py-16">
-          <p>
-            Powered by{" "}
-            <a
-              href="https://supabase.com/?utm_source=create-next-app&utm_medium=template&utm_term=nextjs"
-              target="_blank"
-              className="font-bold hover:underline"
-              rel="noreferrer"
+      {error && (
+        <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">
+          {error.message}
+        </p>
+      )}
+
+      <div className="mt-8 space-y-3">
+        {qbanks?.length ? (
+          qbanks.map((qb) => (
+            <Link
+              key={qb.slug}
+              href={`/qbank/${qb.slug}`}
+              className="block rounded-lg border p-5 hover:bg-gray-50"
             >
-              Supabase
-            </a>
+              <div className="font-medium">{qb.title}</div>
+              <div className="mt-1 text-sm text-gray-500">
+                {count ?? 0} questions
+              </div>
+            </Link>
+          ))
+        ) : (
+          <p className="text-sm text-gray-500">
+            No published question banks found.
           </p>
-          <ThemeSwitcher />
-        </footer>
+        )}
       </div>
     </main>
   );

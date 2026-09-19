@@ -8,13 +8,9 @@ export default async function Home() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth/login");
 
-  const { data: qbanks } = await supabase
-    .from("qbanks")
-    .select("slug, title, description");
-
-  const { count } = await supabase
-    .from("v_question")
-    .select("*", { count: "exact", head: true });
+    const { data: qbanks, error } = await supabase
+    .from("v_qbank_summary")
+    .select("slug, title, description, question_count");
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -30,7 +26,7 @@ export default async function Home() {
             >
               <div className="font-medium">{qb.title}</div>
               <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {count ?? 0} questions
+                {qb.question_count} questions
               </div>
             </Link>
           ))

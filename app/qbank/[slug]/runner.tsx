@@ -4,7 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-type Question = { id: string; stem: string };
+type Question = {
+  id: string;
+  stem: string;
+  image_path: string | null;
+  image_caption: string | null;
+};
 type Choice = { id: string; question_id: string; label: string; body: string };
 type Answer = {
   selectedId: string;
@@ -66,7 +71,10 @@ export default function Runner({
     }
 
     const ids: string[] = attempt.question_ids;
-    const { data: qs } = await supabase.from("v_question").select("id, stem").in("id", ids);
+    const { data: qs } = await supabase
+      .from("v_question")
+      .select("id, stem, image_path, image_caption")
+      .in("id", ids);
     const { data: cs } = await supabase
       .from("v_choice").select("id, question_id, label, body").in("question_id", ids);
     const { data: st } = await supabase
@@ -322,7 +330,20 @@ export default function Runner({
       </div>
 
       {banner}
-
+      {q.image_path && (
+  <figure className="mt-6">
+    <img
+      src={supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl}
+      alt={q.image_caption ?? "Figure"}
+      className="w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
+    />
+    {q.image_caption && (
+      <figcaption className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        {q.image_caption}
+      </figcaption>
+    )}
+  </figure>
+)}
       <p className="mt-8 text-lg leading-relaxed">{q.stem}</p>
 
       <div className="mt-6 space-y-2">

@@ -21,6 +21,7 @@ export default function SiteHeader({ email }: { email: string | null }) {
       <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
         <Link href="/" className="text-sm font-semibold">Qbank</Link>
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+          <Link href="/performance" className="hover:underline">Performance</Link>
           <span className="hidden sm:inline">{email}</span>
           <button
             onClick={logout}

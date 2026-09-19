@@ -34,16 +34,20 @@ export default function Runner({
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const timer = useRef<number>(Date.now());
+  const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
+  const [limit, setLimit] = useState<number | null>(20);
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
 
   async function start() {
     setPhase("loading");
     setError(null);
 
     const { data: id, error: e1 } = await supabase.rpc("start_attempt", {
-      p_qbank_slug: slug,
-      p_mode: "tutor",
-      p_filter: "all",
-    });
+  p_qbank_slug: slug,
+  p_mode: "tutor",
+  p_filter: filter,
+  p_count: limit,
+   });
     if (e1 || !id) {
       setError(e1?.message ?? "Could not start attempt");
       setPhase("idle");
@@ -162,6 +166,12 @@ export default function Runner({
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  useEffect(() => {
+  supabase.rpc("qbank_counts", { p_qbank_slug: slug }).then(({ data }) => {
+    if (data) setCounts(data as Record<string, number>);
+  });
+  }, [phase]);
+
   const banner = error && (
     <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
       {error}
@@ -174,22 +184,89 @@ export default function Runner({
     "rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-700 disabled:opacity-40";
 
   if (phase === "idle" || phase === "loading") {
-    return (
-      <main className="mx-auto max-w-3xl px-6 py-12">
-        <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
-          ← All banks
-        </Link>
-        <h1 className="mt-4 text-2xl font-semibold">{title}</h1>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Tutor mode shows the explanation after each answer.
+  const available = counts ? counts[filter === "all" ? "total" : filter] ?? 0 : null;
+  const filters = [
+    { key: "all", label: "All" },
+    { key: "unused", label: "Unused" },
+    { key: "incorrect", label: "Incorrect" },
+    { key: "marked", label: "Flagged" },
+  ] as const;
+
+  return (
+    <main className="mx-auto max-w-3xl px-6 py-12">
+      <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
+        ← All banks
+      </Link>
+      <h1 className="mt-4 text-2xl font-semibold">{title}</h1>
+
+      {counts && (
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          {counts.total} questions · {counts.unused} unused · {counts.incorrect} incorrect ·{" "}
+          {counts.marked} flagged
         </p>
-        {banner}
-        <button onClick={start} disabled={phase === "loading"} className={`mt-6 ${primaryBtn}`}>
-          {phase === "loading" ? "Starting…" : "Start session"}
-        </button>
-      </main>
-    );
-  }
+      )}
+
+      <div className="mt-8">
+        <p className="text-sm font-medium">Question pool</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {filters.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`rounded-full border px-4 py-1.5 text-sm ${
+                filter === f.key
+                  ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                  : "border-gray-300 dark:border-gray-700"
+              }`}
+            >
+              {f.label}
+              {counts && (
+                <span className="ml-1.5 opacity-60">
+                  {f.key === "all" ? counts.total : counts[f.key]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <p className="text-sm font-medium">Number of questions</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {[10, 20, 40, null].map((n) => (
+            <button
+              key={String(n)}
+              onClick={() => setLimit(n)}
+              className={`rounded-full border px-4 py-1.5 text-sm ${
+                limit === n
+                  ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+                  : "border-gray-300 dark:border-gray-700"
+              }`}
+            >
+              {n ?? "All"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {banner}
+
+      <button
+        onClick={start}
+        disabled={phase === "loading" || available === 0}
+        className={`mt-8 ${primaryBtn}`}
+      >
+        {phase === "loading" ? "Starting…" : "Start session"}
+      </button>
+
+      {available === 0 && (
+        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+          No questions match that filter.
+        </p>
+      )}
+    </main>
+  );
+}
 
   if (phase === "done" && score) {
     const pct = Math.round((score.correct / score.total) * 100);
@@ -203,6 +280,7 @@ export default function Runner({
         <div className="mt-8 flex gap-3">
           <button onClick={start} className={primaryBtn}>Start another</button>
           <Link href="/" className={plainBtn}>All banks</Link>
+          <Link href="/performance" className={plainBtn}>Performance</Link>
         </div>
       </main>
     );

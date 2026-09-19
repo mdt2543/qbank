@@ -8,7 +8,7 @@ export default async function Home() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth/login");
 
-  const { data: qbanks, error } = await supabase
+  const { data: qbanks } = await supabase
     .from("qbanks")
     .select("slug, title, description");
 
@@ -17,15 +17,8 @@ export default async function Home() {
     .select("*", { count: "exact", head: true });
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16">
+    <main className="mx-auto max-w-3xl px-6 py-12">
       <h1 className="text-2xl font-semibold">Question banks</h1>
-      <p className="mt-1 text-sm text-gray-500">Signed in as {user.email}</p>
-
-      {error && (
-        <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">
-          {error.message}
-        </p>
-      )}
 
       <div className="mt-8 space-y-3">
         {qbanks?.length ? (
@@ -33,18 +26,16 @@ export default async function Home() {
             <Link
               key={qb.slug}
               href={`/qbank/${qb.slug}`}
-              className="block rounded-lg border p-5 hover:bg-gray-50"
+              className="block rounded-lg border border-gray-200 p-5 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
             >
               <div className="font-medium">{qb.title}</div>
-              <div className="mt-1 text-sm text-gray-500">
+              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {count ?? 0} questions
               </div>
             </Link>
           ))
         ) : (
-          <p className="text-sm text-gray-500">
-            No published question banks found.
-          </p>
+          <p className="text-sm text-gray-500">No published question banks found.</p>
         )}
       </div>
     </main>

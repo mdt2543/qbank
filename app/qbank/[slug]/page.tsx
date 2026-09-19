@@ -21,5 +21,5 @@ export default async function QbankPage({
 
   if (!qbank) notFound();
 
-  return <Runner slug={qbank.slug} title={qbank.title} />;
+  return <Runner slug={qbank.slug} title={qbank.title} userId={user.id} />;
 }

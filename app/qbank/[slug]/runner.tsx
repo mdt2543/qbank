@@ -16,6 +16,7 @@ type Answer = {
   isCorrect: boolean;
   correctId: string;
   explanation: string | null;
+  rationales: Record<string, string | null>;
 };
 
 export default function Runner({
@@ -38,21 +39,21 @@ export default function Runner({
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
-  const timer = useRef<number>(Date.now());
   const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
   const [limit, setLimit] = useState<number | null>(20);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const timer = useRef<number>(Date.now());
 
   async function start() {
     setPhase("loading");
     setError(null);
 
     const { data: id, error: e1 } = await supabase.rpc("start_attempt", {
-  p_qbank_slug: slug,
-  p_mode: "tutor",
-  p_filter: filter,
-  p_count: limit,
-   });
+      p_qbank_slug: slug,
+      p_mode: "tutor",
+      p_filter: filter,
+      p_count: limit,
+    });
     if (e1 || !id) {
       setError(e1?.message ?? "Could not start attempt");
       setPhase("idle");
@@ -76,9 +77,13 @@ export default function Runner({
       .select("id, stem, image_path, image_caption")
       .in("id", ids);
     const { data: cs } = await supabase
-      .from("v_choice").select("id, question_id, label, body").in("question_id", ids);
+      .from("v_choice")
+      .select("id, question_id, label, body")
+      .in("question_id", ids);
     const { data: st } = await supabase
-      .from("question_status").select("question_id, is_marked").in("question_id", ids);
+      .from("question_status")
+      .select("question_id, is_marked")
+      .in("question_id", ids);
 
     const byId = new Map((qs ?? []).map((q) => [q.id, q as Question]));
     const ordered = ids.map((i) => byId.get(i)).filter(Boolean) as Question[];
@@ -120,6 +125,7 @@ export default function Runner({
         isCorrect: data.is_correct,
         correctId: data.correct_choice_id,
         explanation: data.explanation,
+        rationales: data.rationales ?? {},
       },
     }));
   }
@@ -155,6 +161,13 @@ export default function Runner({
   }
 
   useEffect(() => {
+    supabase.rpc("qbank_counts", { p_qbank_slug: slug }).then(({ data }) => {
+      if (data) setCounts(data as Record<string, number>);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => {
     if (phase !== "active") return;
     function onKey(e: KeyboardEvent) {
       const q = questions[index];
@@ -174,12 +187,6 @@ export default function Runner({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  useEffect(() => {
-  supabase.rpc("qbank_counts", { p_qbank_slug: slug }).then(({ data }) => {
-    if (data) setCounts(data as Record<string, number>);
-  });
-  }, [phase]);
-
   const banner = error && (
     <p className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
       {error}
@@ -190,92 +197,84 @@ export default function Runner({
     "rounded-lg bg-black px-5 py-2.5 text-white dark:bg-white dark:text-black disabled:opacity-40";
   const plainBtn =
     "rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-700 disabled:opacity-40";
+  const pill = (on: boolean) =>
+    `rounded-full border px-4 py-1.5 text-sm ${
+      on
+        ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
+        : "border-gray-300 dark:border-gray-700"
+    }`;
 
+  // ---------------- start screen ----------------
   if (phase === "idle" || phase === "loading") {
-  const available = counts ? counts[filter === "all" ? "total" : filter] ?? 0 : null;
-  const filters = [
-    { key: "all", label: "All" },
-    { key: "unused", label: "Unused" },
-    { key: "incorrect", label: "Incorrect" },
-    { key: "marked", label: "Flagged" },
-  ] as const;
+    const available = counts ? counts[filter === "all" ? "total" : filter] ?? 0 : null;
+    const filters = [
+      { key: "all", label: "All" },
+      { key: "unused", label: "Unused" },
+      { key: "incorrect", label: "Incorrect" },
+      { key: "marked", label: "Flagged" },
+    ] as const;
 
-  return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
-        ← All banks
-      </Link>
-      <h1 className="mt-4 text-2xl font-semibold">{title}</h1>
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
+          ← All banks
+        </Link>
+        <h1 className="mt-4 text-2xl font-semibold">{title}</h1>
 
-      {counts && (
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          {counts.total} questions · {counts.unused} unused · {counts.incorrect} incorrect ·{" "}
-          {counts.marked} flagged
-        </p>
-      )}
+        {counts && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {counts.total} questions · {counts.unused} unused · {counts.incorrect} incorrect ·{" "}
+            {counts.marked} flagged
+          </p>
+        )}
 
-      <div className="mt-8">
-        <p className="text-sm font-medium">Question pool</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {filters.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-full border px-4 py-1.5 text-sm ${
-                filter === f.key
-                  ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
-                  : "border-gray-300 dark:border-gray-700"
-              }`}
-            >
-              {f.label}
-              {counts && (
-                <span className="ml-1.5 opacity-60">
-                  {f.key === "all" ? counts.total : counts[f.key]}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="mt-8">
+          <p className="text-sm font-medium">Question pool</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {filters.map((f) => (
+              <button key={f.key} onClick={() => setFilter(f.key)} className={pill(filter === f.key)}>
+                {f.label}
+                {counts && (
+                  <span className="ml-1.5 opacity-60">
+                    {f.key === "all" ? counts.total : counts[f.key]}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="mt-6">
-        <p className="text-sm font-medium">Number of questions</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {[10, 20, 40, null].map((n) => (
-            <button
-              key={String(n)}
-              onClick={() => setLimit(n)}
-              className={`rounded-full border px-4 py-1.5 text-sm ${
-                limit === n
-                  ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
-                  : "border-gray-300 dark:border-gray-700"
-              }`}
-            >
-              {n ?? "All"}
-            </button>
-          ))}
+        <div className="mt-6">
+          <p className="text-sm font-medium">Number of questions</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {[10, 20, 40, null].map((n) => (
+              <button key={String(n)} onClick={() => setLimit(n)} className={pill(limit === n)}>
+                {n ?? "All"}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {banner}
+        {banner}
 
-      <button
-        onClick={start}
-        disabled={phase === "loading" || available === 0}
-        className={`mt-8 ${primaryBtn}`}
-      >
-        {phase === "loading" ? "Starting…" : "Start session"}
-      </button>
+        <button
+          onClick={start}
+          disabled={phase === "loading" || available === 0}
+          className={`mt-8 ${primaryBtn}`}
+        >
+          {phase === "loading" ? "Starting…" : "Start session"}
+        </button>
 
-      {available === 0 && (
-        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-          No questions match that filter.
-        </p>
-      )}
-    </main>
-  );
-}
+        {available === 0 && (
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+            No questions match that filter.
+          </p>
+        )}
+      </main>
+    );
+  }
 
+  // ---------------- results ----------------
   if (phase === "done" && score) {
     const pct = Math.round((score.correct / score.total) * 100);
     return (
@@ -285,15 +284,16 @@ export default function Runner({
         <p className="mt-1 text-gray-600 dark:text-gray-400">
           {score.correct} of {score.total} correct
         </p>
-        <div className="mt-8 flex gap-3">
+        <div className="mt-8 flex flex-wrap gap-3">
           <button onClick={start} className={primaryBtn}>Start another</button>
-          <Link href="/" className={plainBtn}>All banks</Link>
           <Link href="/performance" className={plainBtn}>Performance</Link>
+          <Link href="/" className={plainBtn}>All banks</Link>
         </div>
       </main>
     );
   }
 
+  // ---------------- question ----------------
   const q = questions[index];
   const answer = answers[q.id];
 
@@ -330,31 +330,38 @@ export default function Runner({
       </div>
 
       {banner}
+
+      <div className="mt-8 space-y-4 text-lg leading-relaxed">
+        {q.stem.split(/\n\s*\n/).map((para, i) => (
+          <p key={i}>{para}</p>
+        ))}
+      </div>
+
       {q.image_path && (
-  <figure className="mt-6">
-    <img
-      src={supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl}
-      alt={q.image_caption ?? "Figure"}
-      className="w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
-    />
-    {q.image_caption && (
-      <figcaption className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-        {q.image_caption}
-      </figcaption>
-    )}
-  </figure>
-)}
-      <p className="mt-8 text-lg leading-relaxed">{q.stem}</p>
+        <figure className="mt-6">
+          <img
+            src={supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl}
+            alt={q.image_caption ?? "Figure"}
+            className="w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
+          />
+          {q.image_caption && (
+            <figcaption className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {q.image_caption}
+            </figcaption>
+          )}
+        </figure>
+      )}
 
       <div className="mt-6 space-y-2">
         {(choices[q.id] ?? []).map((c) => {
           const isPicked = answer ? answer.selectedId === c.id : selected === c.id;
           const isKey = answer && answer.correctId === c.id;
+          const why = answer?.rationales?.[c.id];
           let cls = "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900";
           if (answer) {
             if (isKey) cls = "border-green-600 bg-green-50 dark:bg-green-950";
             else if (isPicked) cls = "border-red-500 bg-red-50 dark:bg-red-950";
-            else cls = "border-gray-200 opacity-50 dark:border-gray-800";
+            else cls = "border-gray-200 dark:border-gray-800";
           } else if (isPicked) {
             cls = "border-black bg-gray-100 dark:border-white dark:bg-gray-800";
           }
@@ -366,7 +373,21 @@ export default function Runner({
               className={`flex w-full gap-3 rounded-lg border p-4 text-left ${cls}`}
             >
               <span className="font-medium">{c.label}.</span>
-              <span>{c.body}</span>
+              <span className="flex-1">
+                <span className={answer && !isKey && !isPicked ? "opacity-70" : ""}>{c.body}</span>
+                {why && (
+                  <span className="mt-2 block text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                    <span
+                      className={`font-medium ${
+                        isKey ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"
+                      }`}
+                    >
+                      {isKey ? "Correct. " : "Incorrect. "}
+                    </span>
+                    {why}
+                  </span>
+                )}
+              </span>
             </button>
           );
         })}

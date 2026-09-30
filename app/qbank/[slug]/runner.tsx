@@ -43,6 +43,9 @@ export default function Runner({
   const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
   const [limit, setLimit] = useState<number | null>(20);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [mode, setMode] = useState<"tutor" | "exam">("tutor");
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [reviewing, setReviewing] = useState(false);
   const [topics, setTopics] = useState<Record<string, { name: string; description: string | null }>>({});
   const timer = useRef<number>(Date.now());
 
@@ -52,7 +55,7 @@ export default function Runner({
 
     const { data: id, error: e1 } = await supabase.rpc("start_attempt", {
       p_qbank_slug: slug,
-      p_mode: "tutor",
+      p_mode: mode === "exam" ? "timed" : "tutor",
       p_filter: filter,
       p_count: limit,
     });
@@ -110,6 +113,8 @@ export default function Runner({
     setIndex(0);
     setSelected(null);
     setAnswers({});
+    setPicked({});
+    setReviewing(false);
     setScore(null);
     timer.current = Date.now();
     setPhase("active");
@@ -138,6 +143,28 @@ export default function Runner({
     }));
   }
 
+  async function pick(choiceId: string) {
+    const q = questions[index];
+    if (!q || !attemptId) return;
+    const prev = picked[q.id];
+    setPicked((p) => ({ ...p, [q.id]: choiceId }));
+    const { error } = await supabase.rpc("answer_question", {
+      p_attempt_id: attemptId,
+      p_question_id: q.id,
+      p_choice_id: choiceId,
+      p_seconds: Math.round((Date.now() - timer.current) / 1000),
+    });
+    if (error) {
+      setError(error.message);
+      setPicked((p) => {
+        const next = { ...p };
+        if (prev) next[q.id] = prev;
+        else delete next[q.id];
+        return next;
+      });
+    }
+  }
+
   async function toggleFlag() {
     const q = questions[index];
     if (!q) return;
@@ -160,10 +187,42 @@ export default function Runner({
 
   async function finish() {
     if (!attemptId) return;
+    if (mode === "exam") {
+      const left = questions.filter((qq) => !picked[qq.id]).length;
+      const msg = left
+        ? `${left} question${left === 1 ? " is" : "s are"} unanswered. Submit the exam anyway?`
+        : "Submit the exam?";
+      if (!window.confirm(msg)) return;
+    }
     const { data, error } = await supabase.rpc("submit_attempt", {
       p_attempt_id: attemptId,
     });
     if (error) return setError(error.message);
+    if (mode === "exam") {
+      const { data: rev, error: e2 } = await supabase.rpc("attempt_review", {
+        p_attempt_id: attemptId,
+      });
+      if (e2) return setError(e2.message);
+      const a: Record<string, Answer> = {};
+      for (const r of rev as {
+        question_id: string;
+        selected_choice_id: string | null;
+        is_correct: boolean;
+        correct_choice_id: string;
+        explanation: string | null;
+        rationales: Record<string, string | null> | null;
+      }[]) {
+        a[r.question_id] = {
+          selectedId: r.selected_choice_id ?? "",
+          isCorrect: r.is_correct,
+          correctId: r.correct_choice_id,
+          explanation: r.explanation,
+          rationales: r.rationales ?? {},
+        };
+      }
+      setAnswers(a);
+    }
+    setReviewing(false);
     setScore({ correct: data.correct, total: data.total });
     setPhase("done");
   }
@@ -183,9 +242,14 @@ export default function Runner({
       const a = answers[q.id];
       if (e.key >= "1" && e.key <= "5" && !a) {
         const c = (choices[q.id] ?? [])[Number(e.key) - 1];
-        if (c) setSelected(c.id);
+        if (c) {
+          if (mode === "exam") pick(c.id);
+          else setSelected(c.id);
+        }
       } else if (e.key === "Enter") {
-        if (!a && selected) submitAnswer();
+        if (mode === "exam" && !a) {
+          if (index < questions.length - 1) jump(index + 1);
+        } else if (!a && selected) submitAnswer();
         else if (a && index < questions.length - 1) jump(index + 1);
       } else if (e.key.toLowerCase() === "f") {
         toggleFlag();
@@ -237,6 +301,23 @@ export default function Runner({
         )}
 
         <div className="mt-8">
+          <p className="text-sm font-medium">Mode</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={() => setMode("tutor")} className={pill(mode === "tutor")}>
+              Tutor
+            </button>
+            <button onClick={() => setMode("exam")} className={pill(mode === "exam")}>
+              Exam
+            </button>
+          </div>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {mode === "tutor"
+              ? "See the answer and explanations after each question."
+              : "No feedback until you submit. You can change answers before then."}
+          </p>
+        </div>
+
+        <div className="mt-6">
           <p className="text-sm font-medium">Question pool</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {filters.map((f) => (
@@ -293,7 +374,25 @@ export default function Runner({
           {score.correct} of {score.total} correct
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <button onClick={start} className={primaryBtn}>Start another</button>
+          {mode === "exam" && (
+            <button
+              onClick={() => {
+                setIndex(0);
+                setSelected(null);
+                setReviewing(true);
+                setPhase("active");
+              }}
+              className={primaryBtn}
+            >
+              Review questions
+            </button>
+          )}
+          <button onClick={start} className={mode === "exam" ? plainBtn : primaryBtn}>
+            Start another
+          </button>
+          <button onClick={() => setPhase("idle")} className={plainBtn}>
+            Change settings
+          </button>
           <Link href="/performance" className={plainBtn}>Performance</Link>
           <Link href="/" className={plainBtn}>All banks</Link>
         </div>
@@ -316,6 +415,8 @@ export default function Runner({
         {questions.map((qq, i) => {
           const a = answers[qq.id];
           let cls = "border-gray-300 text-gray-500 dark:border-gray-700 dark:text-gray-400";
+          if (!a && picked[qq.id])
+            cls = "border-gray-500 bg-gray-200 text-gray-900 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-100";
           if (a)
             cls = a.isCorrect
               ? "border-green-600 bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100"
@@ -362,7 +463,11 @@ export default function Runner({
 
       <div className="mt-6 space-y-2">
         {(choices[q.id] ?? []).map((c) => {
-          const isPicked = answer ? answer.selectedId === c.id : selected === c.id;
+          const isPicked = answer
+            ? answer.selectedId === c.id
+            : mode === "exam"
+            ? picked[q.id] === c.id
+            : selected === c.id;
           const isKey = answer && answer.correctId === c.id;
           const why = answer?.rationales?.[c.id];
           let cls = "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900";
@@ -377,7 +482,7 @@ export default function Runner({
             <button
               key={c.id}
               disabled={!!answer}
-              onClick={() => setSelected(c.id)}
+              onClick={() => (mode === "exam" ? pick(c.id) : setSelected(c.id))}
               className={`flex w-full gap-3 rounded-lg border p-4 text-left ${cls}`}
             >
               <span className="font-medium">{c.label}.</span>
@@ -403,9 +508,11 @@ export default function Runner({
 
       {!answer ? (
         <div className="mt-6 flex items-center gap-3">
-          <button onClick={submitAnswer} disabled={!selected} className={primaryBtn}>
-            Submit answer
-          </button>
+          {mode === "tutor" && (
+            <button onClick={submitAnswer} disabled={!selected} className={primaryBtn}>
+              Submit answer
+            </button>
+          )}
           <button onClick={toggleFlag} className={plainBtn}>
             {flags[q.id] ? "Unflag" : "Flag"}
           </button>
@@ -420,7 +527,7 @@ export default function Runner({
                   : "text-red-700 dark:text-red-400"
               }`}
             >
-              {answer.isCorrect ? "Correct" : "Incorrect"}
+              {!answer.selectedId ? "Omitted" : answer.isCorrect ? "Correct" : "Incorrect"}
             </p>
             {answer.explanation && (
               <p className="mt-3 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
@@ -450,11 +557,19 @@ export default function Runner({
         <button onClick={() => jump(index - 1)} disabled={index === 0} className={plainBtn}>
           Previous
         </button>
-        <span className="text-xs text-gray-400">1–5 select · Enter submit · F flag</span>
+        <span className="text-xs text-gray-400">
+          {mode === "exam" && !reviewing
+            ? "1–5 select · Enter next · F flag"
+            : "1–5 select · Enter submit · F flag"}
+        </span>
         {index < questions.length - 1 ? (
           <button onClick={() => jump(index + 1)} className={plainBtn}>Next</button>
+        ) : reviewing ? (
+          <button onClick={() => setPhase("done")} className={primaryBtn}>Back to results</button>
         ) : (
-          <button onClick={finish} className={primaryBtn}>Finish</button>
+          <button onClick={finish} className={primaryBtn}>
+            {mode === "exam" ? "Submit exam" : "Finish"}
+          </button>
         )}
       </div>
     </main>

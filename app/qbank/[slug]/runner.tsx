@@ -446,20 +446,25 @@ export default function Runner({
         ))}
       </div>
 
-      {q.image_path && (
-        <figure className="mt-6">
-          <img
-            src={supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl}
-            alt={q.image_caption ?? "Figure"}
-            className="w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
-          />
-          {q.image_caption && (
-            <figcaption className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              {q.image_caption}
-            </figcaption>
-          )}
-        </figure>
-      )}
+      {q.image_path && (() => {
+        const src = supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl;
+        return (
+          <figure className="mt-6">
+            <a href={src} target="_blank" rel="noreferrer" title="Open full size">
+              <img
+                src={src}
+                alt={q.image_caption ?? "Figure"}
+                className="mx-auto max-h-64 w-auto max-w-full rounded-lg border border-gray-200 bg-white object-contain dark:border-gray-800"
+              />
+            </a>
+            {q.image_caption && (
+              <figcaption className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
+                {q.image_caption}
+              </figcaption>
+            )}
+          </figure>
+        );
+      })()}
 
       <div className="mt-6 space-y-2">
         {(choices[q.id] ?? []).map((c) => {

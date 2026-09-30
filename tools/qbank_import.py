@@ -285,9 +285,12 @@ def write_outputs(questions, keys, bank, slug, outdir, draft):
             image_names[n] = name
 
     topics = {}
+    descriptions = {}
     for n in questions:
         obj = keys[n]["objective"]
         topics[n] = f"Objective {obj[0]}" if obj else "General"
+        if obj and obj[1]:
+            descriptions.setdefault(topics[n], obj[1])
 
     refs = [f"{slug}-q{n:03d}" for n in questions]
     out = [
@@ -303,7 +306,10 @@ def write_outputs(questions, keys, bank, slug, outdir, draft):
         "",
     ]
     for t in sorted(set(topics.values())):
-        out.append(f"insert into topics (name) values ({esc(t)}) on conflict (name) do nothing;")
+        out.append(
+            f"insert into topics (name, description) values ({esc(t)}, {esc(descriptions.get(t))}) "
+            "on conflict (name) do update set "
+            "description = coalesce(excluded.description, topics.description);")
     out.append("")
     out.append("-- remove questions no longer in the document")
     out.append("delete from questions where qbank_id = "

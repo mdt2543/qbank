@@ -9,6 +9,7 @@ type Question = {
   stem: string;
   image_path: string | null;
   image_caption: string | null;
+  topic_id: string | null;
 };
 type Choice = { id: string; question_id: string; label: string; body: string };
 type Answer = {
@@ -42,6 +43,7 @@ export default function Runner({
   const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
   const [limit, setLimit] = useState<number | null>(20);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [topics, setTopics] = useState<Record<string, { name: string; description: string | null }>>({});
   const timer = useRef<number>(Date.now());
 
   async function start() {
@@ -74,8 +76,14 @@ export default function Runner({
     const ids: string[] = attempt.question_ids;
     const { data: qs } = await supabase
       .from("v_question")
-      .select("id, stem, image_path, image_caption")
+      .select("id, stem, image_path, image_caption, topic_id")
       .in("id", ids);
+    const { data: tp } = await supabase.from("topics").select("id, name, description");
+    setTopics(
+      Object.fromEntries(
+        (tp ?? []).map((t) => [t.id, { name: t.name, description: t.description }])
+      )
+    );
     const { data: cs } = await supabase
       .from("v_choice")
       .select("id, question_id, label, body")
@@ -418,6 +426,18 @@ export default function Runner({
               <p className="mt-3 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
                 {answer.explanation}
               </p>
+            )}
+            {q.topic_id && topics[q.topic_id] && (
+              <div className="mt-4 border-t border-gray-200 pt-3 text-sm dark:border-gray-700">
+                <p className="font-medium text-gray-700 dark:text-gray-300">
+                  {topics[q.topic_id].name}
+                </p>
+                {topics[q.topic_id].description && (
+                  <p className="mt-1 leading-relaxed text-gray-600 dark:text-gray-400">
+                    {topics[q.topic_id].description}
+                  </p>
+                )}
+              </div>
             )}
           </div>
           <button onClick={toggleFlag} className={`mt-3 ${plainBtn}`}>

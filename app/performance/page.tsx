@@ -39,9 +39,16 @@ export default async function Performance() {
                   key={r.topic ?? "none"}
                   className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
                 >
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-medium">{r.topic ?? "Uncategorized"}</span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <div>
+                      <span className="text-sm font-medium">{r.topic ?? "Uncategorized"}</span>
+                      {r.description && (
+                        <p className="mt-1 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                          {r.description}
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
                       {r.correct}/{r.answered} · {pct}%
                     </span>
                   </div>

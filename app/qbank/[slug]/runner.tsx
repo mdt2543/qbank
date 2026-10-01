@@ -12,7 +12,6 @@ import {
   Eraser,
   Highlighter,
   Minus,
-  PanelLeft,
   Strikethrough,
   X,
   ZoomIn,
@@ -66,7 +65,9 @@ export default function Runner({
   const [hl, setHl] = useState<Record<string, Range[]>>({});
   const [struck, setStruck] = useState<Record<string, Record<string, boolean>>>({});
   const [zoom, setZoom] = useState(100);
-  const [navOpen, setNavOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(true);
+  const [navFilter, setNavFilter] = useState<"all" | "unanswered" | "answered" | "flagged">("all");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [reviewPage, setReviewPage] = useState(0);
   const [finishedAt, setFinishedAt] = useState<Date | null>(null);
   const reviewScroll = useRef<HTMLDivElement>(null);
@@ -140,6 +141,8 @@ export default function Runner({
     setPicked({});
     setReviewing(false);
     setTool("none");
+    setNavFilter("all");
+    setConfirmOpen(false);
     setHl({});
     setStruck({});
     setScore(null);
@@ -205,7 +208,8 @@ export default function Runner({
     const q = questions[index];
     if (!q || answers[q.id]) return;
     if (tool === "strike") toggleStrike(choiceId);
-    else pick(choiceId);
+    else if (mode === "exam") pick(choiceId);
+    else setSelected(choiceId);
   }
 
   async function toggleFlag() {
@@ -230,13 +234,7 @@ export default function Runner({
 
   async function finish() {
     if (!attemptId) return;
-    if (mode === "exam") {
-      const left = questions.filter((qq) => !picked[qq.id]).length;
-      const msg = left
-        ? `${left} question${left === 1 ? " is" : "s are"} unanswered. Submit the exam anyway?`
-        : "Submit the exam?";
-      if (!window.confirm(msg)) return;
-    }
+    setConfirmOpen(false);
     const { data, error } = await supabase.rpc("submit_attempt", {
       p_attempt_id: attemptId,
     });
@@ -279,25 +277,22 @@ export default function Runner({
   }, [phase]);
 
   useEffect(() => {
-    if (phase !== "active") return;
+    if (phase !== "active" || confirmOpen) return;
     function onKey(e: KeyboardEvent) {
       const q = questions[index];
       if (!q) return;
       const a = answers[q.id];
       if (e.key >= "1" && e.key <= "5" && !a) {
         const c = (choices[q.id] ?? [])[Number(e.key) - 1];
-        if (c) {
-          if (mode === "exam") clickChoice(c.id);
-          else setSelected(c.id);
-        }
+        if (c) clickChoice(c.id);
       } else if (e.key === "Enter") {
         if (mode === "exam" && !a) {
           if (index < questions.length - 1) jump(index + 1);
         } else if (!a && selected) submitAnswer();
         else if (a && index < questions.length - 1) jump(index + 1);
-      } else if (mode === "exam" && e.key === "ArrowRight") {
+      } else if (e.key === "ArrowRight") {
         jump(index + 1);
-      } else if (mode === "exam" && e.key === "ArrowLeft") {
+      } else if (e.key === "ArrowLeft") {
         jump(index - 1);
       } else if (e.key.toLowerCase() === "f") {
         toggleFlag();
@@ -657,404 +652,352 @@ export default function Runner({
     );
   }
 
-  if (mode === "exam") {
-    const paras = q.stem.split(/\n\s*\n/);
-    const imgSrc = q.image_path
-      ? supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl
-      : null;
-    const tb = (on: boolean) =>
-      `flex h-9 w-9 items-center justify-center rounded ${
-        on ? "bg-yellow-400 text-black" : "text-gray-300 hover:bg-neutral-800"
-      }`;
-    const flip = (t: Tool) => setTool((cur) => (cur === t ? "none" : t));
+  const exam = mode === "exam";
+  const paras = q.stem.split(/\n\s*\n/);
+  const imgSrc = q.image_path
+    ? supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl
+    : null;
+  const topic = q.topic_id ? topics[q.topic_id] : undefined;
+  const isDone = (id: string) => (exam ? !!picked[id] : !!answers[id]);
+  const nAnswered = questions.filter((qq) => isDone(qq.id)).length;
+  const nFlagged = questions.filter((qq) => flags[qq.id]).length;
+  const nLeft = questions.length - nAnswered;
+  const tb = (on: boolean) =>
+    `flex h-9 w-9 items-center justify-center rounded ${
+      on ? "bg-yellow-400 text-black" : "text-gray-300 hover:bg-neutral-800"
+    }`;
+  const flip = (t: Tool) => setTool((cur) => (cur === t ? "none" : t));
 
+  const circle = (qq: Question, i: number, go: () => void) => {
+    const a = answers[qq.id];
+    let cls = "border-neutral-600 text-gray-300 hover:bg-neutral-800";
+    if (!exam && a)
+      cls = a.isCorrect
+        ? "border-green-600 bg-green-900 text-green-100"
+        : "border-red-500 bg-red-900 text-red-100";
+    else if (exam && picked[qq.id]) cls = "border-violet-500 bg-violet-700 text-white";
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
-        <div className="flex items-center justify-between bg-black px-4 py-2.5">
-          <span className="text-lg font-semibold tracking-tight">
-            Qbank <span className="font-normal text-gray-400">exam</span>
-          </span>
-          <Link
-            href="/"
-            onClick={(e) => {
-              if (
-                !window.confirm(
-                  "Leave the exam? Your answers are saved, but the exam will not be submitted."
-                )
+      <button
+        key={qq.id}
+        onClick={go}
+        className={`relative h-11 w-11 shrink-0 rounded-full border text-sm font-medium ${cls} ${
+          i === index ? "ring-2 ring-yellow-400 ring-offset-2 ring-offset-[#15171c]" : ""
+        }`}
+      >
+        {i + 1}
+        {flags[qq.id] && (
+          <Bookmark size={13} className="absolute -bottom-1 -right-1 fill-red-500 text-red-500" />
+        )}
+      </button>
+    );
+  };
+
+  const legend = (filterable: boolean) => {
+    const chip = (key: typeof navFilter, dot: React.ReactNode, n: number) => (
+      <button
+        key={key}
+        disabled={!filterable}
+        onClick={() => setNavFilter((f) => (f === key ? "all" : key))}
+        className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-sm ${
+          filterable && navFilter === key ? "bg-neutral-700" : ""
+        }`}
+      >
+        {dot}
+        {n}
+      </button>
+    );
+    return (
+      <div className="flex items-center gap-3">
+        {chip("unanswered", <span className="h-3.5 w-3.5 rounded-full border border-neutral-500" />, nLeft)}
+        {chip("answered", <span className="h-3.5 w-3.5 rounded-full bg-violet-600" />, nAnswered)}
+        <span className="flex-1" />
+        {chip("flagged", <Bookmark size={14} className="fill-red-500 text-red-500" />, nFlagged)}
+      </div>
+    );
+  };
+
+  const shown = questions
+    .map((qq, i) => ({ qq, i }))
+    .filter(({ qq }) =>
+      navFilter === "unanswered"
+        ? !isDone(qq.id)
+        : navFilter === "answered"
+        ? isDone(qq.id)
+        : navFilter === "flagged"
+        ? !!flags[qq.id]
+        : true
+    );
+
+  const nextBtn =
+    "flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600";
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
+      <div className="flex items-center justify-between bg-black px-4 py-2.5">
+        <span className="text-lg font-semibold tracking-tight">
+          Qbank <span className="font-normal text-gray-400">{exam ? "exam" : "tutor"}</span>
+        </span>
+        <Link
+          href="/"
+          onClick={(e) => {
+            if (
+              !window.confirm(
+                "Leave this session? Your answers are saved, but it will not be submitted."
               )
-                e.preventDefault();
-            }}
-            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white"
-          >
-            <X size={16} /> Exit
-          </Link>
-        </div>
+            )
+              e.preventDefault();
+          }}
+          className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white"
+        >
+          <X size={16} /> Exit
+        </Link>
+      </div>
 
-        <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setNavOpen((o) => !o)}
-              className="rounded p-1 hover:bg-indigo-800"
-              title="Question list"
-            >
-              <PanelLeft size={20} />
-            </button>
-            <span className="text-lg font-semibold">
-              {title}
-            </span>
+      <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
+        <span className="text-lg font-semibold">{title}</span>
+        <button
+          onClick={() => setConfirmOpen(true)}
+          className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
+        >
+          {exam ? "Submit exam" : "End session"}
+        </button>
+      </div>
+
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between px-6 pt-4">
+            <h2 className="text-xl font-semibold">
+              #{index + 1}
+              <span className="ml-2 text-sm font-normal text-gray-500">of {questions.length}</span>
+            </h2>
+            <div className="flex items-center gap-1">
+              <button onClick={() => flip("highlight")} className={tb(tool === "highlight")} title="Highlight (select text)">
+                <Highlighter size={18} />
+              </button>
+              <button onClick={() => flip("erase")} className={tb(tool === "erase")} title="Remove highlight (select text)">
+                <Eraser size={18} />
+              </button>
+              <button onClick={() => flip("strike")} className={tb(tool === "strike")} title="Strike out answer choices">
+                <Strikethrough size={18} />
+              </button>
+              <span className="mx-2 h-5 w-px bg-neutral-700" />
+              <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={tb(false)} title="Zoom out">
+                <ZoomOut size={18} />
+              </button>
+              <span className="w-12 text-center text-sm text-gray-300">{zoom}%</span>
+              <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={tb(false)} title="Zoom in">
+                <ZoomIn size={18} />
+              </button>
+              <span className="mx-2 h-5 w-px bg-neutral-700" />
+              <button
+                onClick={toggleFlag}
+                className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
+              >
+                <Bookmark size={18} className={flags[q.id] ? "fill-red-500 text-red-500" : ""} />
+                Mark for Review
+              </button>
+            </div>
           </div>
-          <button
-            onClick={finish}
-            className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
+
+          <div
+            className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-3"
+            style={{ fontSize: `${(17 * zoom) / 100}px` }}
           >
-            Submit exam
-          </button>
+            {error && <p className="mb-4 rounded bg-red-950 p-3 text-sm text-red-200">{error}</p>}
+
+            <div className="rounded border border-dashed border-neutral-700 p-3">
+              <HighlightedText
+                paragraphs={paras}
+                ranges={hl[q.id] ?? []}
+                tool={tool}
+                onChange={(next) => setHl((h) => ({ ...h, [q.id]: next }))}
+              />
+              {imgSrc && (
+                <figure className="mt-4">
+                  <a href={imgSrc} target="_blank" rel="noreferrer" title="Open full size">
+                    <img
+                      src={imgSrc}
+                      alt={q.image_caption ?? "Figure"}
+                      className="w-auto max-w-full rounded border border-neutral-800 bg-black object-contain"
+                      style={{ maxHeight: `${(16 * zoom) / 100}rem` }}
+                    />
+                  </a>
+                  {q.image_caption && (
+                    <figcaption className="mt-2 text-[0.75em] text-gray-400">{q.image_caption}</figcaption>
+                  )}
+                </figure>
+              )}
+            </div>
+
+            <div className="mt-4 divide-y divide-neutral-800 overflow-hidden rounded border border-neutral-800 bg-[#1b1e24]">
+              {(choices[q.id] ?? []).map((c) => {
+                const mine = answer
+                  ? answer.selectedId === c.id
+                  : exam
+                  ? picked[q.id] === c.id
+                  : selected === c.id;
+                const isKey = !!answer && answer.correctId === c.id;
+                const why = answer?.rationales?.[c.id];
+                const cut = !!struck[q.id]?.[c.id];
+                let row = "hover:bg-neutral-800/60";
+                let ring = "border-neutral-500";
+                if (answer) {
+                  row = isKey ? "bg-green-950/60" : mine ? "bg-red-950/60" : "";
+                  ring = isKey
+                    ? "border-green-500 text-green-400"
+                    : mine
+                    ? "border-red-500 text-red-400"
+                    : "border-neutral-600";
+                } else if (mine) {
+                  row = "bg-sky-950/50";
+                  ring = "border-sky-400 text-sky-400";
+                }
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={!!answer}
+                    onClick={() => clickChoice(c.id)}
+                    className={`flex w-full items-start gap-3 px-4 py-2 text-left ${row}`}
+                  >
+                    <span
+                      className={`mt-[0.2em] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${ring}`}
+                    >
+                      {(mine || isKey) && <span className="h-2.5 w-2.5 rounded-full bg-current" />}
+                    </span>
+                    <span className="flex-1">
+                      <span className={cut ? "text-gray-500 line-through" : ""}>
+                        {c.label}) {c.body}
+                      </span>
+                      {why && (
+                        <span className="mt-2 block text-[0.9em] leading-relaxed text-gray-300">
+                          <span className={`font-medium ${isKey ? "text-green-400" : "text-red-400"}`}>
+                            {isKey ? "Correct. " : "Incorrect. "}
+                          </span>
+                          {why}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {!exam && !answer && (
+              <button
+                onClick={submitAnswer}
+                disabled={!selected}
+                className="mt-4 rounded bg-indigo-700 px-5 py-2.5 hover:bg-indigo-600 disabled:opacity-40"
+              >
+                Submit answer
+              </button>
+            )}
+
+            {answer && (
+              <div className="mt-4 rounded border border-neutral-800 bg-[#1b1e24] p-4">
+                <p className={`font-medium ${answer.isCorrect ? "text-green-400" : "text-red-400"}`}>
+                  {answer.isCorrect ? "Correct" : "Incorrect"}
+                </p>
+                {answer.explanation && (
+                  <p className="mt-2 text-[0.9em] leading-relaxed text-gray-200">{answer.explanation}</p>
+                )}
+                {topic && (
+                  <div className="mt-3 border-t border-neutral-800 pt-3 text-[0.9em]">
+                    <p className="font-medium text-gray-200">{topic.name}</p>
+                    {topic.description && (
+                      <p className="mt-1 leading-relaxed text-gray-400">{topic.description}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex">
+          <button
+            onClick={() => setNavOpen((o) => !o)}
+            className="absolute right-full top-3 flex h-10 w-6 items-center justify-center rounded-l bg-neutral-800 text-gray-300 hover:bg-neutral-700"
+            title={navOpen ? "Hide question list" : "Show question list"}
+          >
+            {navOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
           {navOpen && (
-            <aside className="w-56 shrink-0 overflow-y-auto border-r border-neutral-800 bg-neutral-950 p-3">
-              <div className="grid grid-cols-4 gap-1.5">
-                {questions.map((qq, i) => {
-                  const a = answers[qq.id];
-                  let cls = "border-neutral-700 text-gray-400";
-                  if (a)
-                    cls = !a.selectedId
-                      ? "border-neutral-500 text-gray-300"
-                      : a.isCorrect
-                      ? "border-green-600 bg-green-900 text-green-100"
-                      : "border-red-500 bg-red-900 text-red-100";
-                  else if (picked[qq.id]) cls = "border-sky-500 bg-sky-900 text-sky-100";
-                  return (
-                    <button
-                      key={qq.id}
-                      onClick={() => jump(i)}
-                      className={`relative h-9 rounded border text-sm ${cls} ${
-                        i === index ? "ring-2 ring-white" : ""
-                      }`}
-                    >
-                      {i + 1}
-                      {flags[qq.id] && (
-                        <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500" />
-                      )}
-                    </button>
-                  );
-                })}
+            <aside className="flex w-80 flex-col border-l border-neutral-800 bg-neutral-950">
+              <p className="border-b border-neutral-800 px-4 py-2.5 text-sm font-medium text-gray-300">
+                Review
+              </p>
+              <div className="border-b border-neutral-800 px-4 py-2.5">{legend(true)}</div>
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="grid grid-cols-5 justify-items-center gap-3">
+                  {shown.map(({ qq, i }) => circle(qq, i, () => jump(i)))}
+                </div>
+                {shown.length === 0 && (
+                  <p className="text-center text-sm text-gray-500">No questions match.</p>
+                )}
               </div>
             </aside>
           )}
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center justify-between px-6 pt-4">
-              <h2 className="text-xl font-semibold">
-                #{index + 1}
-                <span className="ml-2 text-sm font-normal text-gray-500">of {questions.length}</span>
-              </h2>
-              <div className="flex items-center gap-1">
-                <button onClick={() => flip("highlight")} className={tb(tool === "highlight")} title="Highlight (select text)">
-                  <Highlighter size={18} />
-                </button>
-                <button onClick={() => flip("erase")} className={tb(tool === "erase")} title="Remove highlight (select text)">
-                  <Eraser size={18} />
-                </button>
-                <button onClick={() => flip("strike")} className={tb(tool === "strike")} title="Strike out answer choices">
-                  <Strikethrough size={18} />
-                </button>
-                <span className="mx-2 h-5 w-px bg-neutral-700" />
-                <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={tb(false)} title="Zoom out">
-                  <ZoomOut size={18} />
-                </button>
-                <span className="w-12 text-center text-sm text-gray-300">{zoom}%</span>
-                <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={tb(false)} title="Zoom in">
-                  <ZoomIn size={18} />
-                </button>
-                <span className="mx-2 h-5 w-px bg-neutral-700" />
-                <button
-                  onClick={toggleFlag}
-                  className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
-                >
-                  <Bookmark size={18} className={flags[q.id] ? "fill-amber-400 text-amber-400" : ""} />
-                  Mark for Review
-                </button>
-              </div>
-            </div>
-
-            <div
-              className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-3"
-              style={{ fontSize: `${(17 * zoom) / 100}px` }}
-            >
-              {error && (
-                <p className="mb-4 rounded bg-red-950 p-3 text-sm text-red-200">{error}</p>
-              )}
-
-              <div className="rounded border border-dashed border-neutral-700 p-3">
-                <HighlightedText
-                  paragraphs={paras}
-                  ranges={hl[q.id] ?? []}
-                  tool={tool}
-                  onChange={(next) => setHl((h) => ({ ...h, [q.id]: next }))}
-                />
-                {imgSrc && (
-                  <figure className="mt-4">
-                    <a href={imgSrc} target="_blank" rel="noreferrer" title="Open full size">
-                      <img
-                        src={imgSrc}
-                        alt={q.image_caption ?? "Figure"}
-                        className="w-auto max-w-full rounded border border-neutral-800 bg-black object-contain"
-                        style={{ maxHeight: `${(16 * zoom) / 100}rem` }}
-                      />
-                    </a>
-                    {q.image_caption && (
-                      <figcaption className="mt-2 text-[0.75em] text-gray-400">
-                        {q.image_caption}
-                      </figcaption>
-                    )}
-                  </figure>
-                )}
-              </div>
-
-              <div className="mt-4 divide-y divide-neutral-800 overflow-hidden rounded border border-neutral-800 bg-[#1b1e24]">
-                {(choices[q.id] ?? []).map((c) => {
-                  const mine = answer ? answer.selectedId === c.id : picked[q.id] === c.id;
-                  const isKey = !!answer && answer.correctId === c.id;
-                  const why = answer?.rationales?.[c.id];
-                  const cut = !!struck[q.id]?.[c.id];
-                  let row = "hover:bg-neutral-800/60";
-                  let ring = "border-neutral-500";
-                  if (answer) {
-                    row = isKey ? "bg-green-950/60" : mine ? "bg-red-950/60" : "";
-                    ring = isKey ? "border-green-500 text-green-400" : mine ? "border-red-500 text-red-400" : "border-neutral-600";
-                  } else if (mine) {
-                    row = "bg-sky-950/50";
-                    ring = "border-sky-400 text-sky-400";
-                  }
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      disabled={!!answer}
-                      onClick={() => clickChoice(c.id)}
-                      className={`flex w-full items-start gap-3 px-4 py-2 text-left ${row}`}
-                    >
-                      <span
-                        className={`mt-[0.2em] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${ring}`}
-                      >
-                        {(mine || isKey) && <span className="h-2.5 w-2.5 rounded-full bg-current" />}
-                      </span>
-                      <span className="flex-1">
-                        <span className={cut ? "text-gray-500 line-through" : ""}>
-                          {c.label}) {c.body}
-                        </span>
-                        {why && (
-                          <span className="mt-2 block text-[0.9em] leading-relaxed text-gray-300">
-                            <span
-                              className={`font-medium ${isKey ? "text-green-400" : "text-red-400"}`}
-                            >
-                              {isKey ? "Correct. " : "Incorrect. "}
-                            </span>
-                            {why}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex">
-          <button
-            onClick={() => jump(index - 1)}
-            disabled={index === 0}
-            className="flex flex-1 items-center justify-center gap-3 bg-neutral-800 py-4 text-lg font-medium hover:bg-neutral-700 disabled:opacity-40"
-          >
-            <ArrowLeft size={20} /> Previous Page
-          </button>
-          {index < questions.length - 1 ? (
-            <button
-              onClick={() => jump(index + 1)}
-              className="flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600"
-            >
-              Next Page <ArrowRight size={20} />
-            </button>
-          ) : (
-            <button
-              onClick={finish}
-              className="flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600"
-            >
-              Finish exam <ArrowRight size={20} />
-            </button>
-          )}
         </div>
       </div>
-    );
-  }
 
-  return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-        <Link href="/" className="hover:underline">← All banks</Link>
-        <span>Question {index + 1} of {questions.length}</span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-10 gap-1.5">
-        {questions.map((qq, i) => {
-          const a = answers[qq.id];
-          let cls = "border-gray-300 text-gray-500 dark:border-gray-700 dark:text-gray-400";
-          if (!a && picked[qq.id])
-            cls = "border-gray-500 bg-gray-200 text-gray-900 dark:border-gray-400 dark:bg-gray-700 dark:text-gray-100";
-          if (a)
-            cls = a.isCorrect
-              ? "border-green-600 bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100"
-              : "border-red-500 bg-red-100 text-red-900 dark:bg-red-900 dark:text-red-100";
-          return (
-            <button
-              key={qq.id}
-              onClick={() => jump(i)}
-              className={`relative h-8 rounded border text-xs ${cls} ${
-                i === index ? "ring-2 ring-black dark:ring-white" : ""
-              }`}
-            >
-              {i + 1}
-              {flags[qq.id] && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500" />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {banner}
-
-      <div className="mt-8 space-y-4 text-lg leading-relaxed">
-        {q.stem.split(/\n\s*\n/).map((para, i) => (
-          <p key={i}>{para}</p>
-        ))}
-      </div>
-
-      {q.image_path && (() => {
-        const src = supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl;
-        return (
-          <figure className="mt-6">
-            <a href={src} target="_blank" rel="noreferrer" title="Open full size">
-              <img
-                src={src}
-                alt={q.image_caption ?? "Figure"}
-                className="mx-auto max-h-64 w-auto max-w-full rounded-lg border border-gray-200 bg-white object-contain dark:border-gray-800"
-              />
-            </a>
-            {q.image_caption && (
-              <figcaption className="mt-2 text-center text-xs text-gray-500 dark:text-gray-400">
-                {q.image_caption}
-              </figcaption>
-            )}
-          </figure>
-        );
-      })()}
-
-      <div className={`mt-6 ${answer ? "space-y-2" : "space-y-1"}`}>
-        {(choices[q.id] ?? []).map((c) => {
-          const isPicked = answer
-            ? answer.selectedId === c.id
-            : selected === c.id;
-          const isKey = answer && answer.correctId === c.id;
-          const why = answer?.rationales?.[c.id];
-          let cls = "border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900";
-          if (answer) {
-            if (isKey) cls = "border-green-600 bg-green-50 dark:bg-green-950";
-            else if (isPicked) cls = "border-red-500 bg-red-50 dark:bg-red-950";
-            else cls = "border-gray-200 dark:border-gray-800";
-          } else if (isPicked) {
-            cls = "border-black bg-gray-100 dark:border-white dark:bg-gray-800";
-          }
-          return (
-            <button
-              key={c.id}
-              disabled={!!answer}
-              onClick={() => setSelected(c.id)}
-              className={`flex w-full gap-3 rounded-lg border text-left ${
-                answer ? "p-4" : "px-3 py-2"
-              } ${cls}`}
-            >
-              <span className="font-medium">{c.label}.</span>
-              <span className="flex-1">
-                <span className={answer && !isKey && !isPicked ? "opacity-70" : ""}>{c.body}</span>
-                {why && (
-                  <span className="mt-2 block text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                    <span
-                      className={`font-medium ${
-                        isKey ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"
-                      }`}
-                    >
-                      {isKey ? "Correct. " : "Incorrect. "}
-                    </span>
-                    {why}
-                  </span>
-                )}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {!answer ? (
-        <div className="mt-6 flex items-center gap-3">
-          <button onClick={submitAnswer} disabled={!selected} className={primaryBtn}>
-            Submit answer
-          </button>
-          <button onClick={toggleFlag} className={plainBtn}>
-            {flags[q.id] ? "Unflag" : "Flag"}
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-5 dark:border-gray-800 dark:bg-gray-900">
-            <p
-              className={`font-medium ${
-                answer.isCorrect
-                  ? "text-green-700 dark:text-green-400"
-                  : "text-red-700 dark:text-red-400"
-              }`}
-            >
-              {!answer.selectedId ? "Omitted" : answer.isCorrect ? "Correct" : "Incorrect"}
-            </p>
-            {answer.explanation && (
-              <p className="mt-3 text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-                {answer.explanation}
-              </p>
-            )}
-            {q.topic_id && topics[q.topic_id] && (
-              <div className="mt-4 border-t border-gray-200 pt-3 text-sm dark:border-gray-700">
-                <p className="font-medium text-gray-700 dark:text-gray-300">
-                  {topics[q.topic_id].name}
-                </p>
-                {topics[q.topic_id].description && (
-                  <p className="mt-1 leading-relaxed text-gray-600 dark:text-gray-400">
-                    {topics[q.topic_id].description}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-          <button onClick={toggleFlag} className={`mt-3 ${plainBtn}`}>
-            {flags[q.id] ? "Unflag" : "Flag"}
-          </button>
-        </>
-      )}
-
-      <div className="mt-8 flex items-center justify-between">
-        <button onClick={() => jump(index - 1)} disabled={index === 0} className={plainBtn}>
-          Previous
+      <div className="flex">
+        <button
+          onClick={() => jump(index - 1)}
+          disabled={index === 0}
+          className="flex flex-1 items-center justify-center gap-3 bg-neutral-800 py-4 text-lg font-medium hover:bg-neutral-700 disabled:opacity-40"
+        >
+          <ArrowLeft size={20} /> Previous Page
         </button>
-        <span className="text-xs text-gray-400">1–5 select · Enter submit · F flag</span>
         {index < questions.length - 1 ? (
-          <button onClick={() => jump(index + 1)} className={plainBtn}>Next</button>
+          <button onClick={() => jump(index + 1)} className={nextBtn}>
+            Next Page <ArrowRight size={20} />
+          </button>
         ) : (
-          <button onClick={finish} className={primaryBtn}>Finish</button>
+          <button onClick={() => setConfirmOpen(true)} className={nextBtn}>
+            {exam ? "Submit exam" : "End session"} <ArrowRight size={20} />
+          </button>
         )}
       </div>
-    </main>
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-20">
+          <div className="w-full max-w-4xl overflow-hidden rounded bg-[#1b1e24] shadow-xl">
+            <div className="bg-indigo-700 px-5 py-3 text-lg font-semibold">Confirm your submission</div>
+            <div className="space-y-3 px-5 py-4 text-sm text-gray-300">
+              <p>
+                <span className="font-semibold text-gray-100">Please review your submission.</span> A
+                colored circle indicates that the question is answered. Select a question to view it or
+                use the &quot;Go Back&quot; button to return.
+              </p>
+              <p>When you are ready to submit, click the &quot;Submit&quot; button.</p>
+            </div>
+            <div className="border-y border-neutral-800 px-5 py-2.5">{legend(false)}</div>
+            <div className="flex max-h-72 flex-wrap gap-3 overflow-y-auto px-5 py-5">
+              {questions.map((qq, i) =>
+                circle(qq, i, () => {
+                  setConfirmOpen(false);
+                  jump(i);
+                })
+              )}
+            </div>
+            <div className="flex">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="flex flex-1 items-center justify-center gap-2 bg-teal-600 py-3.5 font-medium hover:bg-teal-500"
+              >
+                <ArrowLeft size={18} /> Go Back
+              </button>
+              <button
+                onClick={finish}
+                className="flex flex-1 items-center justify-center gap-2 bg-sky-600 py-3.5 font-medium hover:bg-sky-500"
+              >
+                Submit {exam ? "Test" : "Session"} <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

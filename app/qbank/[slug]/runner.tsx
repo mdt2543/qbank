@@ -41,7 +41,6 @@ export default function Runner({
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
-  const [limit, setLimit] = useState<number | null>(20);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [mode, setMode] = useState<"tutor" | "exam">("tutor");
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -57,7 +56,7 @@ export default function Runner({
       p_qbank_slug: slug,
       p_mode: mode === "exam" ? "timed" : "tutor",
       p_filter: filter,
-      p_count: limit,
+      p_count: null,
     });
     if (e1 || !id) {
       setError(e1?.message ?? "Could not start attempt");
@@ -328,17 +327,6 @@ export default function Runner({
                     {f.key === "all" ? counts.total : counts[f.key]}
                   </span>
                 )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <p className="text-sm font-medium">Number of questions</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {[10, 20, 40, null].map((n) => (
-              <button key={String(n)} onClick={() => setLimit(n)} className={pill(limit === n)}>
-                {n ?? "All"}
               </button>
             ))}
           </div>

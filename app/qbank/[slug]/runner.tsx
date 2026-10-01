@@ -2,7 +2,20 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bookmark,
+  Eraser,
+  Highlighter,
+  PanelLeft,
+  Strikethrough,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import HighlightedText, { type Range, type Tool } from "./highlight";
 
 type Question = {
   id: string;
@@ -45,6 +58,11 @@ export default function Runner({
   const [mode, setMode] = useState<"tutor" | "exam">("tutor");
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [reviewing, setReviewing] = useState(false);
+  const [tool, setTool] = useState<Tool>("none");
+  const [hl, setHl] = useState<Record<string, Range[]>>({});
+  const [struck, setStruck] = useState<Record<string, Record<string, boolean>>>({});
+  const [zoom, setZoom] = useState(100);
+  const [navOpen, setNavOpen] = useState(false);
   const [topics, setTopics] = useState<Record<string, { name: string; description: string | null }>>({});
   const timer = useRef<number>(Date.now());
 
@@ -114,6 +132,9 @@ export default function Runner({
     setAnswers({});
     setPicked({});
     setReviewing(false);
+    setTool("none");
+    setHl({});
+    setStruck({});
     setScore(null);
     timer.current = Date.now();
     setPhase("active");
@@ -162,6 +183,22 @@ export default function Runner({
         return next;
       });
     }
+  }
+
+  function toggleStrike(choiceId: string) {
+    const q = questions[index];
+    if (!q) return;
+    setStruck((st) => ({
+      ...st,
+      [q.id]: { ...st[q.id], [choiceId]: !st[q.id]?.[choiceId] },
+    }));
+  }
+
+  function clickChoice(choiceId: string) {
+    const q = questions[index];
+    if (!q || answers[q.id]) return;
+    if (tool === "strike") toggleStrike(choiceId);
+    else pick(choiceId);
   }
 
   async function toggleFlag() {
@@ -242,7 +279,7 @@ export default function Runner({
       if (e.key >= "1" && e.key <= "5" && !a) {
         const c = (choices[q.id] ?? [])[Number(e.key) - 1];
         if (c) {
-          if (mode === "exam") pick(c.id);
+          if (mode === "exam") clickChoice(c.id);
           else setSelected(c.id);
         }
       } else if (e.key === "Enter") {
@@ -250,6 +287,10 @@ export default function Runner({
           if (index < questions.length - 1) jump(index + 1);
         } else if (!a && selected) submitAnswer();
         else if (a && index < questions.length - 1) jump(index + 1);
+      } else if (mode === "exam" && e.key === "ArrowRight") {
+        jump(index + 1);
+      } else if (mode === "exam" && e.key === "ArrowLeft") {
+        jump(index - 1);
       } else if (e.key.toLowerCase() === "f") {
         toggleFlag();
       }
@@ -392,6 +433,289 @@ export default function Runner({
   const q = questions[index];
   const answer = answers[q.id];
 
+  if (mode === "exam") {
+    const paras = q.stem.split(/\n\s*\n/);
+    const imgSrc = q.image_path
+      ? supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl
+      : null;
+    const topic = q.topic_id ? topics[q.topic_id] : undefined;
+    const tb = (on: boolean) =>
+      `flex h-9 w-9 items-center justify-center rounded ${
+        on ? "bg-yellow-400 text-black" : "text-gray-300 hover:bg-neutral-800"
+      }`;
+    const flip = (t: Tool) => setTool((cur) => (cur === t ? "none" : t));
+
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
+        <div className="flex items-center justify-between bg-black px-4 py-2.5">
+          <span className="text-lg font-semibold tracking-tight">
+            Qbank <span className="font-normal text-gray-400">exam</span>
+          </span>
+          <Link
+            href="/"
+            onClick={(e) => {
+              if (
+                !reviewing &&
+                !window.confirm(
+                  "Leave the exam? Your answers are saved, but the exam will not be submitted."
+                )
+              )
+                e.preventDefault();
+            }}
+            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white"
+          >
+            <X size={16} /> Exit
+          </Link>
+        </div>
+
+        <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setNavOpen((o) => !o)}
+              className="rounded p-1 hover:bg-indigo-800"
+              title="Question list"
+            >
+              <PanelLeft size={20} />
+            </button>
+            <span className="text-lg font-semibold">
+              {title}
+              {reviewing && <span className="ml-2 text-sm font-normal text-indigo-200">Review</span>}
+            </span>
+          </div>
+          {reviewing ? (
+            <button
+              onClick={() => setPhase("done")}
+              className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
+            >
+              Back to results
+            </button>
+          ) : (
+            <button
+              onClick={finish}
+              className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
+            >
+              Submit exam
+            </button>
+          )}
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          {navOpen && (
+            <aside className="w-56 shrink-0 overflow-y-auto border-r border-neutral-800 bg-neutral-950 p-3">
+              <div className="grid grid-cols-4 gap-1.5">
+                {questions.map((qq, i) => {
+                  const a = answers[qq.id];
+                  let cls = "border-neutral-700 text-gray-400";
+                  if (a)
+                    cls = !a.selectedId
+                      ? "border-neutral-500 text-gray-300"
+                      : a.isCorrect
+                      ? "border-green-600 bg-green-900 text-green-100"
+                      : "border-red-500 bg-red-900 text-red-100";
+                  else if (picked[qq.id]) cls = "border-sky-500 bg-sky-900 text-sky-100";
+                  return (
+                    <button
+                      key={qq.id}
+                      onClick={() => jump(i)}
+                      className={`relative h-9 rounded border text-sm ${cls} ${
+                        i === index ? "ring-2 ring-white" : ""
+                      }`}
+                    >
+                      {i + 1}
+                      {flags[qq.id] && (
+                        <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+          )}
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center justify-between px-6 pt-4">
+              <h2 className="text-xl font-semibold">
+                #{index + 1}
+                <span className="ml-2 text-sm font-normal text-gray-500">of {questions.length}</span>
+              </h2>
+              <div className="flex items-center gap-1">
+                <button onClick={() => flip("highlight")} className={tb(tool === "highlight")} title="Highlight (select text)">
+                  <Highlighter size={18} />
+                </button>
+                <button onClick={() => flip("erase")} className={tb(tool === "erase")} title="Remove highlight (select text)">
+                  <Eraser size={18} />
+                </button>
+                <button onClick={() => flip("strike")} className={tb(tool === "strike")} title="Strike out answer choices">
+                  <Strikethrough size={18} />
+                </button>
+                <span className="mx-2 h-5 w-px bg-neutral-700" />
+                <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={tb(false)} title="Zoom out">
+                  <ZoomOut size={18} />
+                </button>
+                <span className="w-12 text-center text-sm text-gray-300">{zoom}%</span>
+                <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={tb(false)} title="Zoom in">
+                  <ZoomIn size={18} />
+                </button>
+                <span className="mx-2 h-5 w-px bg-neutral-700" />
+                <button
+                  onClick={toggleFlag}
+                  className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
+                >
+                  <Bookmark size={18} className={flags[q.id] ? "fill-amber-400 text-amber-400" : ""} />
+                  Mark for Review
+                </button>
+              </div>
+            </div>
+
+            <div
+              className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-3"
+              style={{ fontSize: `${(17 * zoom) / 100}px` }}
+            >
+              {error && (
+                <p className="mb-4 rounded bg-red-950 p-3 text-sm text-red-200">{error}</p>
+              )}
+
+              <div className="rounded border border-dashed border-neutral-700 p-3">
+                <HighlightedText
+                  paragraphs={paras}
+                  ranges={hl[q.id] ?? []}
+                  tool={tool}
+                  onChange={(next) => setHl((h) => ({ ...h, [q.id]: next }))}
+                />
+                {imgSrc && (
+                  <figure className="mt-4">
+                    <a href={imgSrc} target="_blank" rel="noreferrer" title="Open full size">
+                      <img
+                        src={imgSrc}
+                        alt={q.image_caption ?? "Figure"}
+                        className="w-auto max-w-full rounded border border-neutral-800 bg-black object-contain"
+                        style={{ maxHeight: `${(16 * zoom) / 100}rem` }}
+                      />
+                    </a>
+                    {q.image_caption && (
+                      <figcaption className="mt-2 text-[0.75em] text-gray-400">
+                        {q.image_caption}
+                      </figcaption>
+                    )}
+                  </figure>
+                )}
+              </div>
+
+              <div className="mt-4 divide-y divide-neutral-800 overflow-hidden rounded border border-neutral-800 bg-[#1b1e24]">
+                {(choices[q.id] ?? []).map((c) => {
+                  const mine = answer ? answer.selectedId === c.id : picked[q.id] === c.id;
+                  const isKey = !!answer && answer.correctId === c.id;
+                  const why = answer?.rationales?.[c.id];
+                  const cut = !!struck[q.id]?.[c.id];
+                  let row = "hover:bg-neutral-800/60";
+                  let ring = "border-neutral-500";
+                  if (answer) {
+                    row = isKey ? "bg-green-950/60" : mine ? "bg-red-950/60" : "";
+                    ring = isKey ? "border-green-500 text-green-400" : mine ? "border-red-500 text-red-400" : "border-neutral-600";
+                  } else if (mine) {
+                    row = "bg-sky-950/50";
+                    ring = "border-sky-400 text-sky-400";
+                  }
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      disabled={!!answer}
+                      onClick={() => clickChoice(c.id)}
+                      className={`flex w-full items-start gap-3 px-4 py-2 text-left ${row}`}
+                    >
+                      <span
+                        className={`mt-[0.2em] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${ring}`}
+                      >
+                        {(mine || isKey) && <span className="h-2.5 w-2.5 rounded-full bg-current" />}
+                      </span>
+                      <span className="flex-1">
+                        <span className={cut ? "text-gray-500 line-through" : ""}>
+                          {c.label}) {c.body}
+                        </span>
+                        {why && (
+                          <span className="mt-2 block text-[0.9em] leading-relaxed text-gray-300">
+                            <span
+                              className={`font-medium ${isKey ? "text-green-400" : "text-red-400"}`}
+                            >
+                              {isKey ? "Correct. " : "Incorrect. "}
+                            </span>
+                            {why}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {answer && (
+                <div className="mt-4 rounded border border-neutral-800 bg-[#1b1e24] p-4">
+                  <p
+                    className={`font-medium ${
+                      !answer.selectedId
+                        ? "text-gray-300"
+                        : answer.isCorrect
+                        ? "text-green-400"
+                        : "text-red-400"
+                    }`}
+                  >
+                    {!answer.selectedId ? "Omitted" : answer.isCorrect ? "Correct" : "Incorrect"}
+                  </p>
+                  {answer.explanation && (
+                    <p className="mt-2 text-[0.9em] leading-relaxed text-gray-200">
+                      {answer.explanation}
+                    </p>
+                  )}
+                  {topic && (
+                    <div className="mt-3 border-t border-neutral-800 pt-3 text-[0.9em]">
+                      <p className="font-medium text-gray-200">{topic.name}</p>
+                      {topic.description && (
+                        <p className="mt-1 leading-relaxed text-gray-400">{topic.description}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex">
+          <button
+            onClick={() => jump(index - 1)}
+            disabled={index === 0}
+            className="flex flex-1 items-center justify-center gap-3 bg-neutral-800 py-4 text-lg font-medium hover:bg-neutral-700 disabled:opacity-40"
+          >
+            <ArrowLeft size={20} /> Previous Page
+          </button>
+          {index < questions.length - 1 ? (
+            <button
+              onClick={() => jump(index + 1)}
+              className="flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600"
+            >
+              Next Page <ArrowRight size={20} />
+            </button>
+          ) : reviewing ? (
+            <button
+              onClick={() => setPhase("done")}
+              className="flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600"
+            >
+              Back to results
+            </button>
+          ) : (
+            <button
+              onClick={finish}
+              className="flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600"
+            >
+              Finish exam <ArrowRight size={20} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
       <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
@@ -458,8 +782,6 @@ export default function Runner({
         {(choices[q.id] ?? []).map((c) => {
           const isPicked = answer
             ? answer.selectedId === c.id
-            : mode === "exam"
-            ? picked[q.id] === c.id
             : selected === c.id;
           const isKey = answer && answer.correctId === c.id;
           const why = answer?.rationales?.[c.id];
@@ -475,7 +797,7 @@ export default function Runner({
             <button
               key={c.id}
               disabled={!!answer}
-              onClick={() => (mode === "exam" ? pick(c.id) : setSelected(c.id))}
+              onClick={() => setSelected(c.id)}
               className={`flex w-full gap-3 rounded-lg border text-left ${
                 answer ? "p-4" : "px-3 py-2"
               } ${cls}`}
@@ -503,11 +825,9 @@ export default function Runner({
 
       {!answer ? (
         <div className="mt-6 flex items-center gap-3">
-          {mode === "tutor" && (
-            <button onClick={submitAnswer} disabled={!selected} className={primaryBtn}>
-              Submit answer
-            </button>
-          )}
+          <button onClick={submitAnswer} disabled={!selected} className={primaryBtn}>
+            Submit answer
+          </button>
           <button onClick={toggleFlag} className={plainBtn}>
             {flags[q.id] ? "Unflag" : "Flag"}
           </button>
@@ -552,19 +872,11 @@ export default function Runner({
         <button onClick={() => jump(index - 1)} disabled={index === 0} className={plainBtn}>
           Previous
         </button>
-        <span className="text-xs text-gray-400">
-          {mode === "exam" && !reviewing
-            ? "1–5 select · Enter next · F flag"
-            : "1–5 select · Enter submit · F flag"}
-        </span>
+        <span className="text-xs text-gray-400">1–5 select · Enter submit · F flag</span>
         {index < questions.length - 1 ? (
           <button onClick={() => jump(index + 1)} className={plainBtn}>Next</button>
-        ) : reviewing ? (
-          <button onClick={() => setPhase("done")} className={primaryBtn}>Back to results</button>
         ) : (
-          <button onClick={finish} className={primaryBtn}>
-            {mode === "exam" ? "Submit exam" : "Finish"}
-          </button>
+          <button onClick={finish} className={primaryBtn}>Finish</button>
         )}
       </div>
     </main>

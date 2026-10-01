@@ -466,7 +466,7 @@ export default function Runner({
         );
       })()}
 
-      <div className="mt-6 space-y-2">
+      <div className={`mt-6 ${answer ? "space-y-2" : "space-y-1"}`}>
         {(choices[q.id] ?? []).map((c) => {
           const isPicked = answer
             ? answer.selectedId === c.id
@@ -488,7 +488,9 @@ export default function Runner({
               key={c.id}
               disabled={!!answer}
               onClick={() => (mode === "exam" ? pick(c.id) : setSelected(c.id))}
-              className={`flex w-full gap-3 rounded-lg border p-4 text-left ${cls}`}
+              className={`flex w-full gap-3 rounded-lg border text-left ${
+                answer ? "p-4" : "px-3 py-2"
+              } ${cls}`}
             >
               <span className="font-medium">{c.label}.</span>
               <span className="flex-1">

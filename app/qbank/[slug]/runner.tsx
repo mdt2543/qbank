@@ -65,7 +65,7 @@ export default function Runner({
   const [hl, setHl] = useState<Record<string, Range[]>>({});
   const [struck, setStruck] = useState<Record<string, Record<string, boolean>>>({});
   const [zoom, setZoom] = useState(100);
-  const [navOpen, setNavOpen] = useState(true);
+  const [navOpen, setNavOpen] = useState(false);
   const [navFilter, setNavFilter] = useState<"all" | "unanswered" | "answered" | "flagged">("all");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reviewPage, setReviewPage] = useState(0);
@@ -142,6 +142,7 @@ export default function Runner({
     setReviewing(false);
     setTool("none");
     setNavFilter("all");
+    setNavOpen(false);
     setConfirmOpen(false);
     setHl({});
     setStruck({});
@@ -227,6 +228,11 @@ export default function Runner({
 
   function jump(i: number) {
     if (i < 0 || i >= questions.length) return;
+    if (mode === "tutor") {
+      // tutor mode: each question must be answered before moving past it
+      const firstOpen = questions.findIndex((qq) => !answers[qq.id]);
+      if (firstOpen !== -1 && i > firstOpen) return;
+    }
     setIndex(i);
     setSelected(null);
     timer.current = Date.now();
@@ -729,7 +735,7 @@ export default function Runner({
     );
 
   const nextBtn =
-    "flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600";
+    "flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600 disabled:opacity-40";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
@@ -950,7 +956,12 @@ export default function Runner({
           <ArrowLeft size={20} /> Previous Page
         </button>
         {index < questions.length - 1 ? (
-          <button onClick={() => jump(index + 1)} className={nextBtn}>
+          <button
+            onClick={() => jump(index + 1)}
+            disabled={!exam && !answer}
+            title={!exam && !answer ? "Submit an answer to continue" : undefined}
+            className={nextBtn}
+          >
             Next Page <ArrowRight size={20} />
           </button>
         ) : (

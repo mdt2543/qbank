@@ -36,6 +36,15 @@ type Answer = {
   rationales: Record<string, string | null>;
 };
 
+function fmtTime(total: number) {
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(sec).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+}
+
 type Resume = {
   attempt_id: string;
   mode: string;
@@ -73,8 +82,12 @@ export default function Runner({
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [deadline, setDeadline] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const submitting = useRef(false);
+  const finishRef = useRef<() => void>(() => {});
   const [resumable, setResumable] = useState<Resume | null>(null);
-  const [mode, setMode] = useState<"tutor" | "exam">("tutor");
+  const [mode, setMode] = useState<"tutor" | "exam" | "timed">("tutor");
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [reviewing, setReviewing] = useState(false);
   const [tool, setTool] = useState<Tool>("none");
@@ -96,7 +109,7 @@ export default function Runner({
 
     const { data: id, error: e1 } = await supabase.rpc("start_attempt", {
       p_qbank_slug: slug,
-      p_mode: mode === "exam" ? "timed" : "tutor",
+      p_mode: mode === "timed" ? "timed_exam" : mode === "exam" ? "timed" : "tutor",
       p_filter: filter,
       p_count: null,
     });
@@ -112,7 +125,7 @@ export default function Runner({
 
     const { data: attempt } = await supabase
       .from("attempts")
-      .select("question_ids")
+      .select("question_ids, time_limit_seconds")
       .eq("id", id)
       .single();
     if (!attempt) {
@@ -122,7 +135,12 @@ export default function Runner({
     }
 
     const ids: string[] = attempt.question_ids;
-    await load(id as string, ids);
+    await load(
+      id as string,
+      ids,
+      undefined,
+      mode === "timed" ? attempt.time_limit_seconds : null
+    );
   }
 
   async function resumeSession() {
@@ -139,7 +157,12 @@ export default function Runner({
     setResumable(null);
   }
 
-  async function load(id: string, ids: string[], resume?: Resume) {
+  async function load(
+    id: string,
+    ids: string[],
+    resume?: Resume,
+    limitSeconds?: number | null
+  ) {
     const { data: qs } = await supabase
       .from("v_question")
       .select("id, stem, image_path, image_caption, topic_id")
@@ -196,6 +219,9 @@ export default function Runner({
       }
     }
 
+    submitting.current = false;
+    setDeadline(limitSeconds ? Date.now() + limitSeconds * 1000 : null);
+    setRemaining(limitSeconds ?? null);
     setAttemptId(id);
     setQuestions(ordered);
     setChoices(grouped);
@@ -274,7 +300,7 @@ export default function Runner({
     const q = questions[index];
     if (!q || answers[q.id]) return;
     if (tool === "strike") toggleStrike(choiceId);
-    else if (mode === "exam") pick(choiceId);
+    else if (mode !== "tutor") pick(choiceId);
     else setSelected(choiceId);
   }
 
@@ -304,17 +330,24 @@ export default function Runner({
   }
 
   async function finish() {
-    if (!attemptId) return;
+    if (!attemptId || submitting.current) return;
+    submitting.current = true;
     setConfirmOpen(false);
     const { data, error } = await supabase.rpc("submit_attempt", {
       p_attempt_id: attemptId,
     });
-    if (error) return setError(error.message);
-    if (mode === "exam") {
+    if (error) {
+      submitting.current = false;
+      return setError(error.message);
+    }
+    if (mode !== "tutor") {
       const { data: rev, error: e2 } = await supabase.rpc("attempt_review", {
         p_attempt_id: attemptId,
       });
-      if (e2) return setError(e2.message);
+      if (e2) {
+        submitting.current = false;
+        return setError(e2.message);
+      }
       const a: Record<string, Answer> = {};
       for (const r of rev as {
         question_id: string;
@@ -338,11 +371,35 @@ export default function Runner({
       localStorage.removeItem(`qbank-marks:${attemptId}`);
     } catch {}
     setResumable(null);
+    setDeadline(null);
     setReviewing(false);
     setFinishedAt(new Date());
     setScore({ correct: data.correct, total: data.total });
     setPhase("done");
   }
+
+  useEffect(() => {
+    finishRef.current = finish;
+  });
+
+  useEffect(() => {
+    if (phase !== "active" || deadline === null) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRemaining(left);
+      if (left <= 0) finishRef.current();
+    };
+    tick();
+    const t = window.setInterval(tick, 1000);
+    return () => window.clearInterval(t);
+  }, [phase, deadline]);
+
+  useEffect(() => {
+    if (phase !== "active" || mode !== "timed") return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [phase, mode]);
 
   useEffect(() => {
     if (phase !== "idle") return;
@@ -376,7 +433,7 @@ export default function Runner({
         const c = (choices[q.id] ?? [])[Number(e.key) - 1];
         if (c) clickChoice(c.id);
       } else if (e.key === "Enter") {
-        if (mode === "exam" && !a) {
+        if (mode !== "tutor" && !a) {
           if (index < questions.length - 1) jump(index + 1);
         } else if (!a && selected) submitAnswer();
         else if (a && index < questions.length - 1) jump(index + 1);
@@ -469,11 +526,18 @@ export default function Runner({
             <button onClick={() => setMode("exam")} className={pill(mode === "exam")}>
               Exam
             </button>
+            <button onClick={() => setMode("timed")} className={pill(mode === "timed")}>
+              Timed exam
+            </button>
           </div>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             {mode === "tutor"
               ? "See the answer and explanations after each question."
-              : "No feedback until you submit. You can change answers before then."}
+              : mode === "exam"
+              ? "No feedback until you submit. You can change answers before then."
+              : `90 seconds per question${
+                  available ? ` (${fmtTime(available * 90)} for ${available} questions)` : ""
+                }. The exam submits automatically when time runs out and cannot be resumed.`}
           </p>
         </div>
 
@@ -523,7 +587,7 @@ export default function Runner({
           {score.correct} of {score.total} correct
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          {mode === "exam" && (
+          {mode !== "tutor" && (
             <button
               onClick={() => {
                 setIndex(0);
@@ -537,7 +601,7 @@ export default function Runner({
               Review questions
             </button>
           )}
-          <button onClick={start} className={mode === "exam" ? plainBtn : primaryBtn}>
+          <button onClick={start} className={mode !== "tutor" ? plainBtn : primaryBtn}>
             Start another
           </button>
           <button onClick={() => setPhase("idle")} className={plainBtn}>
@@ -554,7 +618,7 @@ export default function Runner({
   const q = questions[index];
   const answer = answers[q.id];
 
-  if (mode === "exam" && reviewing) {
+  if (mode !== "tutor" && reviewing) {
     const PAGE = 50;
     const pages = Math.max(1, Math.ceil(questions.length / PAGE));
     const from = reviewPage * PAGE;
@@ -769,7 +833,7 @@ export default function Runner({
     );
   }
 
-  const exam = mode === "exam";
+  const exam = mode !== "tutor";
   const paras = q.stem.split(/\n\s*\n/);
   const imgSrc = q.image_path
     ? supabase.storage.from("qbank-images").getPublicUrl(q.image_path).data.publicUrl
@@ -852,11 +916,21 @@ export default function Runner({
     <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
       <div className="flex items-center justify-between bg-black px-4 py-2.5">
         <span className="text-lg font-semibold tracking-tight">
-          Qbank <span className="font-normal text-gray-400">{exam ? "exam" : "tutor"}</span>
+          Qbank <span className="font-normal text-gray-400">{mode === "timed" ? "timed exam" : exam ? "exam" : "tutor"}</span>
         </span>
         <Link
           href="/"
           onClick={(e) => {
+            if (mode === "timed") {
+              e.preventDefault();
+              if (
+                window.confirm(
+                  "Exit now? A timed exam cannot be resumed, so it will be submitted with your current answers."
+                )
+              )
+                finish();
+              return;
+            }
             if (
               !window.confirm(
                 "Leave this session? Your answers are saved, but it will not be submitted."
@@ -872,12 +946,28 @@ export default function Runner({
 
       <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
         <span className="text-lg font-semibold">{title}</span>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
-        >
-          {exam ? "Submit exam" : "End session"}
-        </button>
+        <div className="flex items-center gap-3">
+          {mode === "timed" && remaining !== null && (
+            <span
+              className={`rounded px-3 py-1 font-mono text-sm font-semibold ${
+                remaining <= 300
+                  ? "bg-red-600"
+                  : remaining <= 600
+                  ? "bg-amber-600"
+                  : "bg-green-700"
+              }`}
+              title="Time remaining"
+            >
+              {fmtTime(remaining)}
+            </span>
+          )}
+          <button
+            onClick={() => setConfirmOpen(true)}
+            className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
+          >
+            {exam ? "Submit exam" : "End session"}
+          </button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1">

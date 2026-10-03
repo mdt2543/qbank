@@ -8,9 +8,16 @@ export default async function Home() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth/login");
 
-    const { data: qbanks, error } = await supabase
+  const { data: summaries } = await supabase
     .from("v_qbank_summary")
     .select("slug, title, description, question_count");
+  const { data: dates } = await supabase.from("qbanks").select("slug, created_at");
+
+  // oldest upload first, newest at the bottom
+  const uploaded = new Map((dates ?? []).map((d) => [d.slug, d.created_at as string]));
+  const qbanks = [...(summaries ?? [])].sort((a, b) =>
+    (uploaded.get(a.slug) ?? "").localeCompare(uploaded.get(b.slug) ?? "")
+  );
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">

@@ -28,6 +28,23 @@ export default async function RootLayout({
 }>) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+
+  let displayName: string | null = null;
+  let avatarUrl: string | null = null;
+  if (user) {
+    const { data: prof } = await supabase
+      .from("student_profiles")
+      .select("display_name, avatar_path")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    displayName = prof?.display_name ?? null;
+    if (prof?.avatar_path) {
+      const { data: signed } = await supabase.storage
+        .from("avatars")
+        .createSignedUrl(prof.avatar_path, 3600);
+      avatarUrl = signed?.signedUrl ?? null;
+    }
+  }
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.className} antialiased`}>
@@ -37,7 +54,7 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <SiteHeader email={user?.email ?? null} />
+          <SiteHeader email={user?.email ?? null} displayName={displayName} avatarUrl={avatarUrl} />
           {children}
         </ThemeProvider>
       </body>

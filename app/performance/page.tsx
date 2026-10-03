@@ -2,13 +2,86 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
-type View = "objective" | "case" | "bank";
+type View = "objective" | "case" | "bank" | "progress";
 
 const TABS: { key: View; label: string }[] = [
   { key: "objective", label: "By objective" },
   { key: "case", label: "By case" },
   { key: "bank", label: "By question bank" },
+  { key: "progress", label: "Progress" },
 ];
+
+type Week = { week: string; answers: number | string; new_questions: number | string };
+
+const DAY = 24 * 60 * 60 * 1000;
+
+// Fill in weeks with no activity so the chart has no gaps; show the latest 16.
+function fillWeeks(rows: Week[]) {
+  const by = new Map(rows.map((r) => [r.week, Number(r.answers)]));
+  if (!rows.length) return [];
+  const first = new Date(rows[0].week + "T00:00:00Z").getTime();
+  const now = new Date();
+  const monday =
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) -
+    ((now.getUTCDay() + 6) % 7) * DAY;
+  const out: { week: string; answers: number }[] = [];
+  for (let t = first; t <= monday; t += 7 * DAY) {
+    const key = new Date(t).toISOString().slice(0, 10);
+    out.push({ week: key, answers: by.get(key) ?? 0 });
+  }
+  return out.slice(-16);
+}
+
+function WeeklyChart({ weeks }: { weeks: { week: string; answers: number }[] }) {
+  const max = Math.max(1, ...weeks.map((w) => w.answers));
+  const W = 640;
+  const H = 160;
+  const pad = 22;
+  const slot = (W - pad * 2) / weeks.length;
+  const label = (iso: string) =>
+    new Date(iso + "T00:00:00Z").toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 24}`} className="w-full" role="img" aria-label="Questions answered per week">
+      {weeks.map((w, i) => {
+        const h = (w.answers / max) * (H - 24);
+        const x = pad + i * slot + slot * 0.15;
+        return (
+          <g key={w.week}>
+            <rect
+              x={x}
+              y={H - h}
+              width={slot * 0.7}
+              height={h}
+              rx={2}
+              className="fill-indigo-500"
+            />
+            {w.answers > 0 && (
+              <text
+                x={x + slot * 0.35}
+                y={H - h - 4}
+                textAnchor="middle"
+                className="fill-gray-500 text-[10px]"
+              >
+                {w.answers}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      <line x1={pad} x2={W - pad} y1={H} y2={H} className="stroke-gray-300 dark:stroke-gray-700" />
+      <text x={pad} y={H + 16} className="fill-gray-500 text-[10px]">
+        {label(weeks[0].week)}
+      </text>
+      <text x={W - pad} y={H + 16} textAnchor="end" className="fill-gray-500 text-[10px]">
+        {label(weeks[weeks.length - 1].week)}
+      </text>
+    </svg>
+  );
+}
 
 type Row = {
   answered: number | string;
@@ -47,7 +120,7 @@ export default async function Performance({
   searchParams: Promise<{ view?: string }>;
 }) {
   const { view: v } = await searchParams;
-  const view: View = v === "case" || v === "bank" ? v : "objective";
+  const view: View = v === "case" || v === "bank" || v === "progress" ? v : "objective";
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -67,6 +140,20 @@ export default async function Performance({
       : { data: null };
   const { data: banks } =
     view === "bank" ? await supabase.from("v_my_bank_performance").select("*") : { data: null };
+
+  const { data: totals } =
+    view === "progress"
+      ? await supabase.from("v_my_totals").select("*").maybeSingle()
+      : { data: null };
+  const { data: weekly } =
+    view === "progress"
+      ? await supabase.from("v_my_weekly_activity").select("*")
+      : { data: null };
+  const { data: progress } =
+    view === "progress"
+      ? await supabase.from("v_my_case_progress").select("*")
+      : { data: null };
+  const weeks = fillWeeks((weekly ?? []) as Week[]);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -175,6 +262,110 @@ export default async function Performance({
                   No answered questions are linked to a case yet.
                 </p>
               ))}
+
+            {view === "progress" && (
+              <div className="space-y-8">
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Unique questions answered", value: totals?.questions ?? 0 },
+                    { label: "Total answers", value: totals?.answers ?? 0 },
+                    {
+                      label: "Answered this week",
+                      value: weeks.length ? weeks[weeks.length - 1].answers : 0,
+                    },
+                  ].map((c) => (
+                    <div
+                      key={c.label}
+                      className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+                    >
+                      <p className="text-2xl font-semibold tabular-nums">{c.value}</p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{c.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {weeks.length > 0 && (
+                  <div>
+                    <h2 className="text-sm font-medium">Questions answered per week</h2>
+                    <div className="mt-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+                      <WeeklyChart weeks={weeks} />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <h2 className="text-sm font-medium">Improvement by case</h2>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Your first answer to each question compared with your most recent one.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {progress?.length ? (
+                      progress.map((c) => {
+                        const first = Number(c.first_pct ?? 0);
+                        const latest = Number(c.latest_pct ?? 0);
+                        const delta = Math.round((latest - first) * 10) / 10;
+                        return (
+                          <div
+                            key={c.case_number}
+                            className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+                          >
+                            <div className="flex items-baseline justify-between gap-4">
+                              <div>
+                                <span className="text-sm font-medium">
+                                  Case {c.case_number}
+                                  {c.title && (
+                                    <span className="font-normal text-gray-500 dark:text-gray-400">
+                                      {" "}
+                                      · {c.title}
+                                    </span>
+                                  )}
+                                </span>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                  {c.questions} questions · {c.retaken} retaken
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-sm tabular-nums">
+                                {first}% → {latest}%{" "}
+                                <span
+                                  className={
+                                    delta > 0
+                                      ? "text-green-600"
+                                      : delta < 0
+                                      ? "text-red-500"
+                                      : "text-gray-500"
+                                  }
+                                >
+                                  ({delta > 0 ? "+" : ""}
+                                  {delta})
+                                </span>
+                              </span>
+                            </div>
+                            <div className="mt-3 space-y-1.5">
+                              <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
+                                <div
+                                  className="h-1.5 rounded bg-gray-400"
+                                  style={{ width: `${first}%` }}
+                                />
+                              </div>
+                              <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
+                                <div
+                                  className="h-1.5 rounded bg-indigo-500"
+                                  style={{ width: `${latest}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        No answered questions are linked to a case yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {view === "bank" &&
               banks?.map((b) => (

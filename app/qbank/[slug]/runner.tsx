@@ -36,6 +36,21 @@ type Answer = {
   rationales: Record<string, string | null>;
 };
 
+type Resume = {
+  attempt_id: string;
+  mode: string;
+  question_ids: string[];
+  started_at: string;
+  responses: {
+    question_id: string;
+    selected_choice_id: string | null;
+    is_correct?: boolean;
+    correct_choice_id?: string;
+    explanation?: string | null;
+    rationales?: Record<string, string | null> | null;
+  }[];
+};
+
 export default function Runner({
   slug,
   title,
@@ -58,6 +73,7 @@ export default function Runner({
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [resumable, setResumable] = useState<Resume | null>(null);
   const [mode, setMode] = useState<"tutor" | "exam">("tutor");
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [reviewing, setReviewing] = useState(false);
@@ -89,6 +105,10 @@ export default function Runner({
       setPhase("idle");
       return;
     }
+    if (resumable) {
+      await supabase.rpc("abandon_attempt", { p_attempt_id: resumable.attempt_id });
+      setResumable(null);
+    }
 
     const { data: attempt } = await supabase
       .from("attempts")
@@ -102,6 +122,24 @@ export default function Runner({
     }
 
     const ids: string[] = attempt.question_ids;
+    await load(id as string, ids);
+  }
+
+  async function resumeSession() {
+    if (!resumable) return;
+    setPhase("loading");
+    setError(null);
+    setMode(resumable.mode === "tutor" ? "tutor" : "exam");
+    await load(resumable.attempt_id, resumable.question_ids, resumable);
+  }
+
+  async function discardResume() {
+    if (!resumable) return;
+    await supabase.rpc("abandon_attempt", { p_attempt_id: resumable.attempt_id });
+    setResumable(null);
+  }
+
+  async function load(id: string, ids: string[], resume?: Resume) {
     const { data: qs } = await supabase
       .from("v_question")
       .select("id, stem, image_path, image_caption, topic_id")
@@ -131,21 +169,48 @@ export default function Runner({
     const f: Record<string, boolean> = {};
     for (const s of st ?? []) if (s.is_marked) f[s.question_id] = true;
 
-    setAttemptId(id as string);
+    // rebuild progress when resuming
+    const ans: Record<string, Answer> = {};
+    const picks: Record<string, string> = {};
+    for (const r of resume?.responses ?? []) {
+      if (!r.selected_choice_id) continue;
+      if (resume?.mode === "tutor") {
+        ans[r.question_id] = {
+          selectedId: r.selected_choice_id,
+          isCorrect: !!r.is_correct,
+          correctId: r.correct_choice_id ?? "",
+          explanation: r.explanation ?? null,
+          rationales: r.rationales ?? {},
+        };
+      } else {
+        picks[r.question_id] = r.selected_choice_id;
+      }
+    }
+    const firstOpen = ordered.findIndex((qq) => !ans[qq.id] && !picks[qq.id]);
+    let marks: { hl?: Record<string, Range[]>; struck?: Record<string, Record<string, boolean>> } = {};
+    if (resume) {
+      try {
+        marks = JSON.parse(localStorage.getItem(`qbank-marks:${id}`) ?? "{}");
+      } catch {
+        marks = {};
+      }
+    }
+
+    setAttemptId(id);
     setQuestions(ordered);
     setChoices(grouped);
     setFlags(f);
-    setIndex(0);
+    setIndex(firstOpen === -1 ? Math.max(0, ordered.length - 1) : firstOpen);
     setSelected(null);
-    setAnswers({});
-    setPicked({});
+    setAnswers(ans);
+    setPicked(picks);
     setReviewing(false);
     setTool("none");
     setNavFilter("all");
     setNavOpen(false);
     setConfirmOpen(false);
-    setHl({});
-    setStruck({});
+    setHl(marks.hl ?? {});
+    setStruck(marks.struck ?? {});
     setScore(null);
     timer.current = Date.now();
     setPhase("active");
@@ -269,11 +334,30 @@ export default function Runner({
       }
       setAnswers(a);
     }
+    try {
+      localStorage.removeItem(`qbank-marks:${attemptId}`);
+    } catch {}
+    setResumable(null);
     setReviewing(false);
     setFinishedAt(new Date());
     setScore({ correct: data.correct, total: data.total });
     setPhase("done");
   }
+
+  useEffect(() => {
+    if (phase !== "idle") return;
+    supabase.rpc("resume_attempt", { p_qbank_slug: slug }).then(({ data }) => {
+      setResumable((data as Resume | null) ?? null);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => {
+    if (!attemptId || phase !== "active") return;
+    try {
+      localStorage.setItem(`qbank-marks:${attemptId}`, JSON.stringify({ hl, struck }));
+    } catch {}
+  }, [hl, struck, attemptId, phase]);
 
   useEffect(() => {
     supabase.rpc("qbank_counts", { p_qbank_slug: slug }).then(({ data }) => {
@@ -347,6 +431,33 @@ export default function Runner({
             {counts.total} questions · {counts.unused} unused · {counts.incorrect} incorrect ·{" "}
             {counts.marked} flagged
           </p>
+        )}
+
+        {resumable && (
+          <div className="mt-6 rounded-lg border border-indigo-300 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-950">
+            <p className="font-medium">
+              Unfinished {resumable.mode === "tutor" ? "tutor" : "exam"} session
+            </p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {resumable.responses.length} of {resumable.question_ids.length} answered · started{" "}
+              {new Date(resumable.started_at).toLocaleDateString()}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={resumeSession}
+                disabled={phase === "loading"}
+                className={primaryBtn}
+              >
+                Resume
+              </button>
+              <button onClick={discardResume} className={plainBtn}>
+                Discard and start new
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Starting a new session below also discards this one.
+            </p>
+          </div>
         )}
 
         <div className="mt-8">

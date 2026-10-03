@@ -21,5 +21,17 @@ export default async function QbankPage({
 
   if (!qbank) notFound();
 
-  return <Runner slug={qbank.slug} title={qbank.title} userId={user.id} />;
+  // opt-in setting; any error (e.g. column not created yet) means "off"
+  const { data: prefs } = await supabase
+    .from("student_profiles")
+    .select("jumpscares")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return <Runner
+      slug={qbank.slug}
+      title={qbank.title}
+      userId={user.id}
+      jumpscares={prefs?.jumpscares ?? false}
+    />;
 }

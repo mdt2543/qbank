@@ -14,6 +14,13 @@ export default async function Profile() {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  // separate query so the page still works before the jumpscares column exists
+  const { data: js } = await supabase
+    .from("student_profiles")
+    .select("jumpscares")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   let avatarUrl: string | null = null;
   if (prof?.avatar_path) {
     const { data } = await supabase.storage.from("avatars").createSignedUrl(prof.avatar_path, 3600);
@@ -37,6 +44,7 @@ export default async function Profile() {
         initialName={prof?.display_name ?? ""}
         initialPath={prof?.avatar_path ?? null}
         initialUrl={avatarUrl}
+        initialJumpscares={js?.jumpscares ?? false}
       />
     </main>
   );

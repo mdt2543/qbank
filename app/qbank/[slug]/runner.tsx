@@ -64,10 +64,12 @@ export default function Runner({
   slug,
   title,
   userId,
+  jumpscares,
 }: {
   slug: string;
   title: string;
   userId: string;
+  jumpscares: boolean;
 }) {
   const supabase = createClient();
   const [phase, setPhase] = useState<"idle" | "loading" | "active" | "done">("idle");
@@ -81,6 +83,7 @@ export default function Runner({
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [scare, setScare] = useState(false);
   const [deadline, setDeadline] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const submitting = useRef(false);
@@ -392,6 +395,36 @@ export default function Runner({
     const t = window.setInterval(tick, 1000);
     return () => window.clearInterval(t);
   }, [phase, deadline]);
+
+  // Opt-in tutor-mode jump scare: a 1-in-10,000 chance each second the question
+  // screen is visible. Skipped entirely when the device asks for reduced motion.
+  useEffect(() => {
+    if (!jumpscares || phase !== "active" || mode !== "tutor") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const audio = new Audio("/jumpscare.mp3");
+    audio.volume = 0.8;
+    audio.preload = "auto";
+    new Image().src = "/jumpscare.jpg";
+
+    let hide: number | undefined;
+    const t = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (Math.random() >= 1 / 10000) return;
+      setScare(true);
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+      window.clearTimeout(hide);
+      hide = window.setTimeout(() => setScare(false), 2500);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(t);
+      window.clearTimeout(hide);
+      audio.pause();
+      setScare(false);
+    };
+  }, [jumpscares, phase, mode]);
 
   useEffect(() => {
     if (phase !== "active" || mode !== "timed") return;
@@ -1185,6 +1218,16 @@ export default function Runner({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {scare && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black"
+          onClick={() => setScare(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/jumpscare.jpg" alt="" className="h-full w-full object-contain" />
         </div>
       )}
     </div>

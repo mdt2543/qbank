@@ -29,12 +29,14 @@ export default function ProfileForm({
   initialName,
   initialPath,
   initialUrl,
+  initialJumpscares,
 }: {
   userId: string;
   email: string;
   initialName: string;
   initialPath: string | null;
   initialUrl: string | null;
+  initialJumpscares: boolean;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -43,6 +45,8 @@ export default function ProfileForm({
   const [path, setPath] = useState(initialPath);
   const [preview, setPreview] = useState(initialUrl);
   const [blob, setBlob] = useState<Blob | null>(null);
+  const [jumpscares, setJumpscares] = useState(initialJumpscares);
+  const [savedJumpscares, setSavedJumpscares] = useState(initialJumpscares);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -88,6 +92,8 @@ export default function ProfileForm({
     const { error } = await supabase.rpc("save_profile", {
       p_display_name: name,
       p_avatar_path: nextPath,
+      // only sent when changed, so saving a name never depends on the newer setting
+      ...(jumpscares !== savedJumpscares ? { p_jumpscares: jumpscares } : {}),
     });
     if (error) {
       if (blob && nextPath) await supabase.storage.from("avatars").remove([nextPath]);
@@ -101,6 +107,7 @@ export default function ProfileForm({
     }
     setBlob(null);
     setPath(nextPath);
+    setSavedJumpscares(jumpscares);
     setBusy(false);
     setMsg({ ok: true, text: "Saved." });
     router.refresh();
@@ -153,6 +160,23 @@ export default function ProfileForm({
           You only appear on the leaderboard once you choose a name.
         </p>
       </div>
+
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={jumpscares}
+          onChange={(e) => setJumpscares(e.target.checked)}
+          className="mt-1 h-4 w-4"
+        />
+        <span>
+          <span className="text-sm font-medium">Enable jump scares in tutor mode</span>
+          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+            Off by default. When on, a loud, sudden image and sound can very rarely appear while
+            you study in tutor mode. It never happens in exam modes, and not if your device is set
+            to reduce motion.
+          </span>
+        </span>
+      </label>
 
       {msg && (
         <p

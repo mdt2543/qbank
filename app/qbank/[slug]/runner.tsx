@@ -80,7 +80,6 @@ export default function Runner({
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
-  const [filter, setFilter] = useState<"all" | "unused" | "incorrect" | "marked">("all");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [deadline, setDeadline] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -110,7 +109,7 @@ export default function Runner({
     const { data: id, error: e1 } = await supabase.rpc("start_attempt", {
       p_qbank_slug: slug,
       p_mode: mode === "timed" ? "timed_exam" : mode === "exam" ? "timed" : "tutor",
-      p_filter: filter,
+      p_filter: "all",
       p_count: null,
     });
     if (e1 || !id) {
@@ -468,13 +467,7 @@ export default function Runner({
 
   // ---------------- start screen ----------------
   if (phase === "idle" || phase === "loading") {
-    const available = counts ? counts[filter === "all" ? "total" : filter] ?? 0 : null;
-    const filters = [
-      { key: "all", label: "All" },
-      { key: "unused", label: "Unused" },
-      { key: "incorrect", label: "Incorrect" },
-      { key: "marked", label: "Flagged" },
-    ] as const;
+    const available = counts ? counts.total ?? 0 : null;
 
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
@@ -541,22 +534,6 @@ export default function Runner({
           </p>
         </div>
 
-        <div className="mt-6">
-          <p className="text-sm font-medium">Question pool</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {filters.map((f) => (
-              <button key={f.key} onClick={() => setFilter(f.key)} className={pill(filter === f.key)}>
-                {f.label}
-                {counts && (
-                  <span className="ml-1.5 opacity-60">
-                    {f.key === "all" ? counts.total : counts[f.key]}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {banner}
 
         <button
@@ -569,7 +546,7 @@ export default function Runner({
 
         {available === 0 && (
           <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-            No questions match that filter.
+            This bank has no questions yet.
           </p>
         )}
       </main>

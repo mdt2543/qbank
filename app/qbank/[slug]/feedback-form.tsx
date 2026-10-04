@@ -36,7 +36,7 @@ export default function FeedbackForm({
 
   if (sent) {
     return (
-      <p className="mt-4 text-sm text-green-700 dark:text-green-400">
+      <p className="text-sm text-green-700 dark:text-green-400">
         Thanks, your feedback was sent.{" "}
         <button
           onClick={() => {
@@ -55,7 +55,7 @@ export default function FeedbackForm({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-4 text-sm text-gray-500 underline underline-offset-4 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+        className="block text-sm text-gray-700 underline underline-offset-4 hover:text-black dark:text-gray-300 dark:hover:text-white"
       >
         Leave feedback
       </button>
@@ -63,7 +63,7 @@ export default function FeedbackForm({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
       <p className="text-sm font-medium">Leave feedback</p>
       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
         About this question bank. Your name and email are included so your instructor can follow

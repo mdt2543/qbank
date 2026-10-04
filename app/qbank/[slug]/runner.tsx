@@ -656,7 +656,9 @@ export default function Runner({
           </p>
         )}
 
-        <FeedbackForm slug={slug} />
+        <div className="mt-8">
+          <FeedbackForm slug={slug} />
+        </div>
 
         {history.length > 0 && (
           <div className="mt-12">
@@ -729,7 +731,9 @@ export default function Runner({
           <Link href="/" className={plainBtn}>All banks</Link>
         </div>
 
-        <FeedbackForm slug={slug} attemptId={attemptId} />
+        <div className="mt-8">
+          <FeedbackForm slug={slug} attemptId={attemptId} />
+        </div>
       </main>
     );
   }

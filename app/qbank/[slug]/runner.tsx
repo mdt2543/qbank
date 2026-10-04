@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import HighlightedText, { type Range, type Tool } from "./highlight";
+import FeedbackForm from "./feedback-form";
 
 type Question = {
   id: string;
@@ -655,6 +656,8 @@ export default function Runner({
           </p>
         )}
 
+        <FeedbackForm slug={slug} />
+
         {history.length > 0 && (
           <div className="mt-12">
             <p className="text-sm font-medium">Previous attempts</p>
@@ -725,6 +728,8 @@ export default function Runner({
           <Link href="/performance" className={plainBtn}>Performance</Link>
           <Link href="/" className={plainBtn}>All banks</Link>
         </div>
+
+        <FeedbackForm slug={slug} attemptId={attemptId} />
       </main>
     );
   }

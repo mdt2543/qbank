@@ -25,6 +25,26 @@ type BankRow = {
   last_active: string | null;
 };
 
+type FeedbackRow = {
+  id: string;
+  created_at: string;
+  email: string;
+  display_name: string | null;
+  bank: string;
+  bank_slug: string | null;
+  rating: number | null;
+  message: string;
+  session_mode: string | null;
+  session_correct: number | null;
+  session_total: number | null;
+};
+
+const MODE_LABEL: Record<string, string> = {
+  tutor: "Tutor",
+  timed: "Exam",
+  timed_exam: "Timed exam",
+};
+
 const SORTS = [
   { key: "last", label: "Last active" },
   { key: "answered", label: "Most answered" },
@@ -62,6 +82,7 @@ export default async function Admin({
   const { data: overview } = await supabase.rpc("admin_overview");
   const { data: banksData } = await supabase.rpc("admin_bank_summary");
   const { data: actData } = await supabase.rpc("admin_student_activity");
+  const { data: fbData } = await supabase.rpc("admin_feedback");
 
   const ov = (overview as { accounts: number; active_7d: number; answers: number }[] | null)?.[0];
   const banks = (banksData ?? []) as BankRow[];
@@ -78,6 +99,14 @@ export default async function Admin({
   if (sort === "student") rows = [...rows].sort((a, b) => a.email.localeCompare(b.email) || a.bank.localeCompare(b.bank));
 
   const shown = rows.slice(0, 500);
+
+  let feedback = (fbData ?? []) as FeedbackRow[];
+  if (bankFilter) feedback = feedback.filter((f) => f.bank_slug === bankFilter);
+  if (q) {
+    feedback = feedback.filter((f) =>
+      `${f.email} ${f.display_name ?? ""} ${f.bank} ${f.message}`.toLowerCase().includes(q)
+    );
+  }
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
@@ -217,6 +246,45 @@ export default async function Admin({
       {rows.length > shown.length && (
         <p className="mt-2 text-xs text-gray-500">Showing the first {shown.length} of {rows.length}.</p>
       )}
+
+      <h2 className="mt-10 text-sm font-medium">
+        Feedback <span className="font-normal text-gray-500">({feedback.length})</span>
+      </h2>
+      <div className="mt-3 space-y-2">
+        {feedback.slice(0, 200).map((f) => (
+          <div key={f.id} className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="text-sm">
+                <span className="font-medium">{f.display_name ?? f.email.split("@")[0]}</span>
+                <span className="text-gray-500 dark:text-gray-400"> · {f.email}</span>
+              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400" title={f.created_at}>
+                {ago(f.created_at)}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {f.bank}
+              {f.session_mode && (
+                <>
+                  {" "}
+                  · after a {MODE_LABEL[f.session_mode] ?? f.session_mode} session (
+                  {f.session_correct ?? 0}/{f.session_total ?? 0})
+                </>
+              )}
+              {f.rating !== null && (
+                <span className="ml-2 text-amber-500">
+                  {"★".repeat(f.rating)}
+                  <span className="text-gray-300 dark:text-gray-700">{"★".repeat(5 - f.rating)}</span>
+                </span>
+              )}
+            </p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{f.message}</p>
+          </div>
+        ))}
+        {feedback.length === 0 && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">No feedback yet.</p>
+        )}
+      </div>
     </main>
   );
 }

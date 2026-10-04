@@ -93,6 +93,35 @@ function toPct(r: Row) {
   return r.pct === null ? 0 : Number(r.pct);
 }
 
+// rows from the v_perf_* views carry two sets of numbers: every answer across all
+// attempts, and only the latest answer to each question
+type Metric = Row & {
+  latest_answered: number | string;
+  latest_correct: number | string;
+  latest_pct: number | string | null;
+};
+
+const MIN_ANSWERS = 5;
+
+function pick(r: Metric, latest: boolean): Row {
+  return latest
+    ? { answered: r.latest_answered, correct: r.latest_correct, pct: r.latest_pct }
+    : { answered: r.answered, correct: r.correct, pct: r.pct };
+}
+
+// weakest first, but rows with very few answers go last so one miss isn't a "0%"
+function weakestFirst<T extends Metric>(rows: T[], latest: boolean, name: (r: T) => string) {
+  const key = (r: T) => {
+    const m = pick(r, latest);
+    return { few: Number(m.answered) < MIN_ANSWERS ? 1 : 0, pct: toPct(m) };
+  };
+  return [...rows].sort((a, b) => {
+    const x = key(a);
+    const y = key(b);
+    return x.few - y.few || x.pct - y.pct || name(a).localeCompare(name(b));
+  });
+}
+
 function Bar({ pct }: { pct: number }) {
   return (
     <div className="mt-2 h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
@@ -110,6 +139,9 @@ function Score({ r }: { r: Row }) {
   return (
     <span className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
       {r.correct}/{r.answered} · {toPct(r)}%
+      {Number(r.answered) < MIN_ANSWERS && (
+        <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">few answers</span>
+      )}
     </span>
   );
 }
@@ -117,29 +149,37 @@ function Score({ r }: { r: Row }) {
 export default async function Performance({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; mode?: string }>;
 }) {
-  const { view: v } = await searchParams;
+  const { view: v, mode } = await searchParams;
   const view: View = v === "case" || v === "bank" || v === "progress" ? v : "objective";
+  const latest = mode === "latest";
+  const href = (key: View, wantLatest: boolean) => {
+    const qs = new URLSearchParams();
+    if (key !== "objective") qs.set("view", key);
+    if (wantLatest && key !== "progress") qs.set("mode", "latest");
+    const str = qs.toString();
+    return str ? `/performance?${str}` : "/performance";
+  };
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/auth/login");
 
   // objective rows are always loaded: they also give the overall total
-  const { data: rows } = await supabase.from("v_my_topic_performance").select("*");
+  const { data: rows } = await supabase.from("v_perf_objective").select("*");
 
-  const answered = rows?.reduce((n, r) => n + Number(r.answered), 0) ?? 0;
-  const correct = rows?.reduce((n, r) => n + Number(r.correct), 0) ?? 0;
+  const answered = rows?.reduce((n, r) => n + Number(pick(r, latest).answered), 0) ?? 0;
+  const correct = rows?.reduce((n, r) => n + Number(pick(r, latest).correct), 0) ?? 0;
 
   const { data: cases } =
-    view === "case" ? await supabase.from("v_my_case_performance").select("*") : { data: null };
+    view === "case" ? await supabase.from("v_perf_case").select("*") : { data: null };
   const { data: caseObjs } =
     view === "case"
-      ? await supabase.from("v_my_case_objective_performance").select("*")
+      ? await supabase.from("v_perf_case_objective").select("*")
       : { data: null };
   const { data: banks } =
-    view === "bank" ? await supabase.from("v_my_bank_performance").select("*") : { data: null };
+    view === "bank" ? await supabase.from("v_perf_bank").select("*") : { data: null };
 
   const { data: totals } =
     view === "progress"
@@ -176,7 +216,7 @@ export default async function Performance({
             {TABS.map((t) => (
               <Link
                 key={t.key}
-                href={t.key === "objective" ? "/performance" : `/performance?view=${t.key}`}
+                href={href(t.key, latest)}
                 className={`rounded-full border px-4 py-1.5 text-sm ${
                   view === t.key
                     ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
@@ -188,9 +228,37 @@ export default async function Performance({
             ))}
           </div>
 
+          {view !== "progress" && (
+            <>
+              <div className="mt-4 flex flex-wrap gap-2 text-sm">
+                {[
+                  { wantLatest: false, label: "All attempts" },
+                  { wantLatest: true, label: "Latest attempt only" },
+                ].map((m) => (
+                  <Link
+                    key={m.label}
+                    href={href(view, m.wantLatest)}
+                    className={`rounded-full border px-3 py-1 ${
+                      latest === m.wantLatest
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
+                        : "border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400"
+                    }`}
+                  >
+                    {m.label}
+                  </Link>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {latest
+                  ? "Counts only your most recent answer to each question."
+                  : "Counts every answer you've given across all attempts. Skipped questions aren't counted."}
+              </p>
+            </>
+          )}
+
           <div className="mt-6 space-y-2">
             {view === "objective" &&
-              rows?.map((r) => (
+              weakestFirst(rows ?? [], latest, (r) => r.topic ?? "").map((r) => (
                 <div
                   key={r.topic ?? "none"}
                   className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
@@ -204,9 +272,9 @@ export default async function Performance({
                         </p>
                       )}
                     </div>
-                    <Score r={r} />
+                    <Score r={pick(r, latest)} />
                   </div>
-                  <Bar pct={toPct(r)} />
+                  <Bar pct={toPct(pick(r, latest))} />
                 </div>
               ))}
 
@@ -231,14 +299,16 @@ export default async function Performance({
                             </span>
                           )}
                         </span>
-                        <Score r={c} />
+                        <Score r={pick(c, latest)} />
                       </div>
-                      <Bar pct={toPct(c)} />
+                      <Bar pct={toPct(pick(c, latest))} />
                     </summary>
                     <div className="space-y-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-                      {caseObjs
-                        ?.filter((o) => o.case_number === c.case_number)
-                        .map((o) => (
+                      {weakestFirst(
+                        (caseObjs ?? []).filter((o) => o.case_number === c.case_number),
+                        latest,
+                        (o) => o.topic
+                      ).map((o) => (
                           <div key={o.topic}>
                             <div className="flex items-baseline justify-between gap-4">
                               <div>
@@ -249,9 +319,9 @@ export default async function Performance({
                                   </p>
                                 )}
                               </div>
-                              <Score r={o} />
+                              <Score r={pick(o, latest)} />
                             </div>
-                            <Bar pct={toPct(o)} />
+                            <Bar pct={toPct(pick(o, latest))} />
                           </div>
                         ))}
                     </div>
@@ -382,12 +452,12 @@ export default async function Performance({
                         {b.bank}
                       </Link>
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                        {b.answered} of {b.total} questions attempted
+                        {b.questions} of {b.total} questions attempted
                       </p>
                     </div>
-                    <Score r={b} />
+                    <Score r={pick(b, latest)} />
                   </div>
-                  <Bar pct={toPct(b)} />
+                  <Bar pct={toPct(pick(b, latest))} />
                 </div>
               ))}
           </div>

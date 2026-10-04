@@ -122,6 +122,9 @@ export default function Runner({
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [deleting, setDeleting] = useState<HistoryRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reviewFrom, setReviewFrom] = useState<"results" | "history">("results");
   const [scare, setScare] = useState(false);
   const [deadline, setDeadline] = useState<number | null>(null);
@@ -220,6 +223,17 @@ export default function Runner({
     setReviewFrom("history");
     setReviewPage(0);
     setReviewing(true);
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const { error } = await supabase.rpc("delete_attempt", { p_attempt_id: deleting.id });
+    setDeleteBusy(false);
+    if (error) return setDeleteError(error.message);
+    setHistory((list) => list.filter((h) => h.id !== deleting.id));
+    setDeleting(null);
   }
 
   function closeReview() {
@@ -681,17 +695,70 @@ export default function Runner({
                         {new Date(h.submitted_at).toLocaleString()}
                       </p>
                     </div>
-                    <button
-                      onClick={() => reviewAttempt(h)}
-                      disabled={phase === "loading"}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 dark:border-gray-700 disabled:opacity-40"
-                    >
-                      Review
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleting(h);
+                        }}
+                        disabled={phase === "loading"}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-white hover:bg-red-700 disabled:opacity-40"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => reviewAttempt(h)}
+                        disabled={phase === "loading"}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 dark:border-gray-700 disabled:opacity-40"
+                      >
+                        Review
+                      </button>
+                    </div>
                   </li>
                 );
               })}
             </ul>
+          </div>
+        )}
+
+        {deleting && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900">
+              <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">
+                Delete this attempt?
+              </h2>
+              <p className="mt-3 text-sm">
+                {MODE_LABEL[deleting.mode] ?? deleting.mode} ·{" "}
+                {deleting.score_correct ?? 0} / {deleting.score_total ?? 0} ·{" "}
+                {new Date(deleting.submitted_at).toLocaleString()}
+              </p>
+              <p className="mt-3 rounded bg-red-50 p-3 text-sm font-medium text-red-800 dark:bg-red-950 dark:text-red-200">
+                This is permanent and cannot be undone.
+              </p>
+              <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                The attempt and all its answers will be removed. They will also stop counting in
+                your Performance, Progress and leaderboard totals.
+              </p>
+              {deleteError && (
+                <p className="mt-3 text-sm text-red-600 dark:text-red-400">{deleteError}</p>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  onClick={() => setDeleting(null)}
+                  disabled={deleteBusy}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleteBusy}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-40"
+                >
+                  {deleteBusy ? "Deleting…" : "Delete permanently"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>

@@ -29,9 +29,13 @@ export default async function RootLayout({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  let isAdmin = false;
   let displayName: string | null = null;
   let avatarUrl: string | null = null;
   if (user) {
+    // the Admin link is only ever rendered for admins
+    const { data: admin } = await supabase.rpc("is_site_admin");
+    isAdmin = admin === true;
     const { data: prof } = await supabase
       .from("student_profiles")
       .select("display_name, avatar_path")
@@ -54,7 +58,7 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <SiteHeader email={user?.email ?? null} displayName={displayName} avatarUrl={avatarUrl} />
+          <SiteHeader email={user?.email ?? null} displayName={displayName} avatarUrl={avatarUrl} isAdmin={isAdmin} />
           {children}
         </ThemeProvider>
       </body>

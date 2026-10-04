@@ -9,10 +9,12 @@ export default function SiteHeader({
   email,
   displayName,
   avatarUrl,
+  isAdmin,
 }: {
   email: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -33,6 +35,7 @@ export default function SiteHeader({
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
           <Link href="/performance" className="hover:underline">Performance</Link>
           <Link href="/leaderboard" className="hover:underline">Leaderboard</Link>
+          {isAdmin && <Link href="/admin" className="hover:underline">Admin</Link>}
           <Link href="/profile" className="flex items-center gap-2 hover:underline" title="Your profile">
             <Avatar url={avatarUrl} name={shownName} size={28} />
             <span className="hidden sm:inline">{shownName}</span>

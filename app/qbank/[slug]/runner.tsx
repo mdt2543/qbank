@@ -36,6 +36,43 @@ type Answer = {
   rationales: Record<string, string | null>;
 };
 
+type ReviewRow = {
+  question_id: string;
+  selected_choice_id: string | null;
+  is_correct: boolean;
+  correct_choice_id: string;
+  explanation: string | null;
+  rationales: Record<string, string | null> | null;
+};
+
+type HistoryRow = {
+  id: string;
+  mode: string;
+  submitted_at: string;
+  score_correct: number | null;
+  score_total: number | null;
+};
+
+const MODE_LABEL: Record<string, string> = {
+  tutor: "Tutor",
+  timed: "Exam",
+  timed_exam: "Timed exam",
+};
+
+function toAnswers(rev: ReviewRow[]) {
+  const a: Record<string, Answer> = {};
+  for (const r of rev) {
+    a[r.question_id] = {
+      selectedId: r.selected_choice_id ?? "",
+      isCorrect: r.is_correct,
+      correctId: r.correct_choice_id,
+      explanation: r.explanation,
+      rationales: r.rationales ?? {},
+    };
+  }
+  return a;
+}
+
 function fmtTime(total: number) {
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
@@ -83,6 +120,8 @@ export default function Runner({
   const [selected, setSelected] = useState<string | null>(null);
   const [score, setScore] = useState<{ correct: number; total: number } | null>(null);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [reviewFrom, setReviewFrom] = useState<"results" | "history">("results");
   const [scare, setScare] = useState(false);
   const [deadline, setDeadline] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -151,6 +190,44 @@ export default function Runner({
     setError(null);
     setMode(resumable.mode === "tutor" ? "tutor" : "exam");
     await load(resumable.attempt_id, resumable.question_ids, resumable);
+  }
+
+  async function reviewAttempt(h: HistoryRow) {
+    setPhase("loading");
+    setError(null);
+    const { data: at } = await supabase
+      .from("attempts")
+      .select("question_ids")
+      .eq("id", h.id)
+      .single();
+    const { data: rev, error: e } = await supabase.rpc("attempt_review", {
+      p_attempt_id: h.id,
+    });
+    if (!at || e) {
+      setError(e?.message ?? "Could not load that attempt");
+      setPhase("idle");
+      return;
+    }
+    await load(h.id, at.question_ids);
+    setMode(h.mode === "tutor" ? "tutor" : h.mode === "timed_exam" ? "timed" : "exam");
+    setAnswers(toAnswers(rev as ReviewRow[]));
+    setScore({
+      correct: h.score_correct ?? 0,
+      total: h.score_total ?? at.question_ids.length,
+    });
+    setFinishedAt(new Date(h.submitted_at));
+    setReviewFrom("history");
+    setReviewPage(0);
+    setReviewing(true);
+  }
+
+  function closeReview() {
+    if (reviewFrom === "history") {
+      setReviewing(false);
+      setPhase("idle");
+    } else {
+      setPhase("done");
+    }
   }
 
   async function discardResume() {
@@ -342,39 +419,21 @@ export default function Runner({
       submitting.current = false;
       return setError(error.message);
     }
-    if (mode !== "tutor") {
-      const { data: rev, error: e2 } = await supabase.rpc("attempt_review", {
-        p_attempt_id: attemptId,
-      });
-      if (e2) {
-        submitting.current = false;
-        return setError(e2.message);
-      }
-      const a: Record<string, Answer> = {};
-      for (const r of rev as {
-        question_id: string;
-        selected_choice_id: string | null;
-        is_correct: boolean;
-        correct_choice_id: string;
-        explanation: string | null;
-        rationales: Record<string, string | null> | null;
-      }[]) {
-        a[r.question_id] = {
-          selectedId: r.selected_choice_id ?? "",
-          isCorrect: r.is_correct,
-          correctId: r.correct_choice_id,
-          explanation: r.explanation,
-          rationales: r.rationales ?? {},
-        };
-      }
-      setAnswers(a);
+    const { data: rev, error: e2 } = await supabase.rpc("attempt_review", {
+      p_attempt_id: attemptId,
+    });
+    if (e2) {
+      submitting.current = false;
+      return setError(e2.message);
     }
+    setAnswers(toAnswers(rev as ReviewRow[]));
     try {
       localStorage.removeItem(`qbank-marks:${attemptId}`);
     } catch {}
     setResumable(null);
     setDeadline(null);
     setReviewing(false);
+    setReviewFrom("results");
     setFinishedAt(new Date());
     setScore({ correct: data.correct, total: data.total });
     setPhase("done");
@@ -399,7 +458,7 @@ export default function Runner({
   // Opt-in tutor-mode jump scare: a 1-in-10,000 chance each second the question
   // screen is visible. Skipped entirely when the device asks for reduced motion.
   useEffect(() => {
-    if (!jumpscares || phase !== "active" || mode !== "tutor") return;
+    if (!jumpscares || phase !== "active" || mode !== "tutor" || reviewing) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const audio = new Audio("/jumpscare.mp3");
@@ -424,7 +483,7 @@ export default function Runner({
       audio.pause();
       setScare(false);
     };
-  }, [jumpscares, phase, mode]);
+  }, [jumpscares, phase, mode, reviewing]);
 
   useEffect(() => {
     if (phase !== "active" || mode !== "timed") return;
@@ -432,6 +491,19 @@ export default function Runner({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [phase, mode]);
+
+  useEffect(() => {
+    if (phase !== "idle") return;
+    supabase
+      .from("attempts")
+      .select("id, mode, submitted_at, score_correct, score_total, qbanks!inner(slug)")
+      .eq("qbanks.slug", slug)
+      .eq("status", "submitted")
+      .order("submitted_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => setHistory((data ?? []) as unknown as HistoryRow[]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== "idle") return;
@@ -582,6 +654,41 @@ export default function Runner({
             This bank has no questions yet.
           </p>
         )}
+
+        {history.length > 0 && (
+          <div className="mt-12">
+            <p className="text-sm font-medium">Previous attempts</p>
+            <ul className="mt-3 divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+              {history.map((h) => {
+                const total = h.score_total ?? 0;
+                const pct = total ? Math.round(((h.score_correct ?? 0) / total) * 100) : 0;
+                return (
+                  <li key={h.id} className="flex items-center gap-4 px-4 py-3 text-sm">
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {h.score_correct ?? 0} / {total}{" "}
+                        <span className="font-normal text-gray-500 dark:text-gray-400">
+                          ({pct}%)
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {MODE_LABEL[h.mode] ?? h.mode} ·{" "}
+                        {new Date(h.submitted_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => reviewAttempt(h)}
+                      disabled={phase === "loading"}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 dark:border-gray-700 disabled:opacity-40"
+                    >
+                      Review
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </main>
     );
   }
@@ -597,21 +704,19 @@ export default function Runner({
           {score.correct} of {score.total} correct
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          {mode !== "tutor" && (
-            <button
-              onClick={() => {
-                setIndex(0);
-                setSelected(null);
-                setReviewing(true);
-                setReviewPage(0);
-                setPhase("active");
-              }}
-              className={primaryBtn}
-            >
-              Review questions
-            </button>
-          )}
-          <button onClick={start} className={mode !== "tutor" ? plainBtn : primaryBtn}>
+          <button
+            onClick={() => {
+              setIndex(0);
+              setSelected(null);
+              setReviewing(true);
+              setReviewPage(0);
+              setPhase("active");
+            }}
+            className={primaryBtn}
+          >
+            Review questions
+          </button>
+          <button onClick={start} className={plainBtn}>
             Start another
           </button>
           <button onClick={() => setPhase("idle")} className={plainBtn}>
@@ -628,7 +733,7 @@ export default function Runner({
   const q = questions[index];
   const answer = answers[q.id];
 
-  if (mode !== "tutor" && reviewing) {
+  if (reviewing) {
     const PAGE = 50;
     const pages = Math.max(1, Math.ceil(questions.length / PAGE));
     const from = reviewPage * PAGE;
@@ -661,7 +766,7 @@ export default function Runner({
             <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={iconBtn} title="Zoom in">
               <ZoomIn size={18} />
             </button>
-            <button onClick={() => setPhase("done")} className={`ml-2 ${iconBtn}`} title="Back to results">
+            <button onClick={closeReview} className={`ml-2 ${iconBtn}`} title="Back">
               <X size={20} />
             </button>
           </div>
@@ -832,10 +937,10 @@ export default function Runner({
               </button>
             )}
             <button
-              onClick={() => setPhase("done")}
+              onClick={closeReview}
               className="rounded bg-indigo-700 px-5 py-2.5 hover:bg-indigo-600"
             >
-              Back to results
+              {reviewFrom === "history" ? "Back to bank" : "Back to results"}
             </button>
           </div>
         </div>

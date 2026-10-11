@@ -273,7 +273,7 @@ def balance(questions, keys, seed):
 # output
 # --------------------------------------------------------------------------
 
-def write_outputs(questions, keys, bank, slug, outdir, draft):
+def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None):
     imgdir = outdir / f"{slug}-images"
     image_names = {}
     for n, q in questions.items():
@@ -299,10 +299,12 @@ def write_outputs(questions, keys, bank, slug, outdir, draft):
         "-- Safe to re-run: it mirrors the document exactly.",
         "begin;",
         "",
-        "insert into qbanks (slug, title, is_published)",
-        f"values ({esc(slug)}, {esc(bank)}, {'false' if draft else 'true'})",
+        "insert into qbanks (slug, title, is_published" + (", folder)" if folder else ")"),
+        f"values ({esc(slug)}, {esc(bank)}, {'false' if draft else 'true'}"
+        + (f", {esc(folder)})" if folder else ")"),
         "on conflict (slug) do update set title = excluded.title,"
-        " is_published = excluded.is_published;",
+        " is_published = excluded.is_published"
+        + (", folder = excluded.folder;" if folder else ";"),
         "",
     ]
     for t in sorted(set(topics.values())):
@@ -360,6 +362,9 @@ def main():
                     help="reorder options so correct answers spread evenly across A–E")
     ap.add_argument("--draft", action="store_true",
                     help="import unpublished, so it doesn't appear on the site yet")
+    ap.add_argument("--folder", choices=["case-review", "exam-prep"],
+                    help="home-page folder for this bank (needs migration_015.sql); "
+                         "omit to leave the bank's folder unchanged")
     ap.add_argument("--seed", type=int, default=20260913)
     args = ap.parse_args()
 
@@ -389,7 +394,7 @@ def main():
     after = collections.Counter(keys[n]["letter"] for n in questions)
 
     outdir.mkdir(parents=True, exist_ok=True)
-    sql_path, imgdir, image_names = write_outputs(questions, keys, args.bank, slug, outdir, args.draft)
+    sql_path, imgdir, image_names = write_outputs(questions, keys, args.bank, slug, outdir, args.draft, args.folder)
 
     letters = sorted({L for q in questions.values() for L in q["choices"]})
     dist = "  ".join(f"{L}={after.get(L, 0)}" for L in letters)

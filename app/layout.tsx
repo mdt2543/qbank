@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import SiteHeader from "@/components/site-header";
+import TutorialGate from "@/components/tutorial-gate";
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
@@ -30,12 +31,16 @@ export default async function RootLayout({
   const { data: { user } } = await supabase.auth.getUser();
 
   let isAdmin = false;
+  let showTutorial = false;
   let displayName: string | null = null;
   let avatarUrl: string | null = null;
   if (user) {
     // the Admin link is only ever rendered for admins
     const { data: admin } = await supabase.rpc("is_site_admin");
     isAdmin = admin === true;
+    // only an explicit "no" shows the tour; an error (e.g. SQL not run yet) means "don't"
+    const { data: seen } = await supabase.rpc("has_seen_tutorial");
+    showTutorial = seen === false;
     const { data: prof } = await supabase
       .from("student_profiles")
       .select("display_name, avatar_path")
@@ -60,6 +65,7 @@ export default async function RootLayout({
         >
           <SiteHeader email={user?.email ?? null} displayName={displayName} avatarUrl={avatarUrl} isAdmin={isAdmin} />
           {children}
+          {user && <TutorialGate show={showTutorial} />}
         </ThemeProvider>
       </body>
     </html>

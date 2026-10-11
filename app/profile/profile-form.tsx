@@ -190,6 +190,16 @@ export default function ProfileForm({
         </p>
       )}
 
+      <div className="border-t border-gray-200 pt-4 dark:border-gray-800">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("open-tutorial"))}
+          className="text-sm text-gray-700 underline underline-offset-4 dark:text-gray-300"
+        >
+          Show the tutorial again
+        </button>
+      </div>
+
       <button
         onClick={save}
         disabled={busy}

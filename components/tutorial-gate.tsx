@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Sparkles,
   Trophy,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -142,6 +143,9 @@ export default function TutorialGate({ show }: { show: boolean }) {
   const supabase = createClient();
   const [open, setOpen] = useState(show);
   const [step, setStep] = useState(0);
+  // when a link inside the tour is followed, the tour shrinks to a small button
+  // instead of closing, so the student can carry on from the same step
+  const [minimized, setMinimized] = useState(false);
 
   // first login: record that it has been shown, so it only appears once
   useEffect(() => {
@@ -153,6 +157,7 @@ export default function TutorialGate({ show }: { show: boolean }) {
   useEffect(() => {
     const replay = () => {
       setStep(0);
+      setMinimized(false);
       setOpen(true);
     };
     window.addEventListener("open-tutorial", replay);
@@ -164,7 +169,30 @@ export default function TutorialGate({ show }: { show: boolean }) {
   const s = STEPS[step];
   const Icon = s.icon;
   const last = step === STEPS.length - 1;
-  const close = () => setOpen(false);
+  const close = () => {
+    setOpen(false);
+    setMinimized(false);
+  };
+
+  if (minimized) {
+    return (
+      <div className="fixed bottom-4 right-4 z-[70] flex items-center rounded-full bg-indigo-600 text-white shadow-lg">
+        <button
+          onClick={() => setMinimized(false)}
+          className="rounded-l-full py-2.5 pl-5 pr-3 text-sm font-medium hover:bg-indigo-700"
+        >
+          Continue tour · {step + 1} of {STEPS.length}
+        </button>
+        <button
+          onClick={close}
+          aria-label="End tour"
+          className="rounded-r-full py-2.5 pl-1 pr-4 text-white/80 hover:bg-indigo-700 hover:text-white"
+        >
+          <X size={16} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
@@ -197,7 +225,7 @@ export default function TutorialGate({ show }: { show: boolean }) {
         {s.action && (
           <Link
             href={s.action.href}
-            onClick={close}
+            onClick={() => setMinimized(true)}
             className="mt-4 inline-block text-sm font-medium text-indigo-600 underline underline-offset-4 dark:text-indigo-400"
           >
             {s.action.label} →

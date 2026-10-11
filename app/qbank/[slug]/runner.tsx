@@ -820,12 +820,18 @@ export default function Runner({
       if (reviewScroll.current) reviewScroll.current.scrollTop = 0;
     };
     const iconBtn = "rounded p-1.5 text-white hover:bg-white/15 disabled:opacity-30";
+    const kind =
+      mode === "timed"
+        ? { label: "timed exam", session: "Timed exam", badge: "bg-amber-500/20 text-amber-200 ring-amber-400/40" }
+        : mode === "exam"
+        ? { label: "exam", session: "Exam", badge: "bg-sky-500/20 text-sky-200 ring-sky-400/40" }
+        : { label: "tutor", session: "Tutor", badge: "bg-emerald-500/20 text-emerald-200 ring-emerald-400/40" };
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
         <div className="flex items-center justify-between bg-black px-4 py-2.5">
           <span className="text-lg font-semibold tracking-tight">
-            Qbank <span className="font-normal text-gray-400">exam</span>
+            teterqbank <span className="font-normal text-gray-400">{kind.label}</span>
           </span>
           <Link href="/" className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white">
             <X size={16} /> Exit
@@ -833,7 +839,12 @@ export default function Runner({
         </div>
 
         <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
-          <span className="text-lg font-semibold">View Responses</span>
+          <span className="flex items-center gap-3 text-lg font-semibold">
+            View Responses
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${kind.badge}`}>
+              {kind.session} session
+            </span>
+          </span>
           <div className="flex items-center gap-1">
             <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={iconBtn} title="Zoom out">
               <ZoomOut size={18} />
@@ -1107,7 +1118,7 @@ export default function Runner({
     <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
       <div className="flex items-center justify-between bg-black px-4 py-2.5">
         <span className="text-lg font-semibold tracking-tight">
-          Qbank <span className="font-normal text-gray-400">{mode === "timed" ? "timed exam" : exam ? "exam" : "tutor"}</span>
+          teterqbank <span className="font-normal text-gray-400">{mode === "timed" ? "timed exam" : exam ? "exam" : "tutor"}</span>
         </span>
         <Link
           href="/"

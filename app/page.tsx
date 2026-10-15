@@ -3,10 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { ChevronRight, Folder } from "lucide-react";
 
-// Folder order on the page. A bank's folder is the key stored in qbanks.folder.
-const FOLDERS = [
-  { key: "case-review", title: "Case Review" },
-  { key: "exam-prep", title: "Exam Prep" },
+type Sub = { key: string; title: string };
+
+// Subfolders inside Case Review: Case 1 ... Case 14
+const CASE_SUBFOLDERS: Sub[] = Array.from({ length: 14 }, (_, i) => ({
+  key: `case-${i + 1}`,
+  title: `Case ${i + 1}`,
+}));
+
+// Folder order on the page. A bank's folder is the key stored in qbanks.folder, and its
+// subfolder the key stored in qbanks.subfolder.
+const FOLDERS: { key: string; title: string; subfolders: Sub[] }[] = [
+  { key: "case-review", title: "Case Review", subfolders: CASE_SUBFOLDERS },
+  { key: "exam-prep", title: "Exam Prep", subfolders: [] },
 ];
 
 type Bank = {
@@ -30,16 +39,60 @@ function BankCard({ qb }: { qb: Bank }) {
   );
 }
 
-function FolderBox({ title, banks }: { title: string; banks: Bank[] }) {
+function count(n: number) {
+  return `${n} question bank${n === 1 ? "" : "s"}`;
+}
+
+function SubFolderBox({ title, banks }: { title: string; banks: Bank[] }) {
+  // a subfolder with nothing in it yet is shown, but can't be opened
+  if (!banks.length) {
+    return (
+      <div className="flex items-center gap-3 rounded-lg border border-dashed border-gray-200 px-4 py-3 text-gray-400 dark:border-gray-800 dark:text-gray-600">
+        <Folder size={18} className="shrink-0" />
+        <span className="flex-1 text-sm">{title}</span>
+        <span className="text-xs">No question banks yet</span>
+      </div>
+    );
+  }
+  return (
+    <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+        <Folder size={18} className="shrink-0 text-indigo-500" />
+        <div className="flex-1">
+          <div className="text-sm font-medium">{title}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">{count(banks.length)}</div>
+        </div>
+        <ChevronRight
+          size={16}
+          className="shrink-0 text-gray-400 transition-transform group-open:rotate-90"
+        />
+      </summary>
+      <div className="space-y-3 border-t border-gray-200 p-3 dark:border-gray-800">
+        {banks.map((qb) => (
+          <BankCard key={qb.slug} qb={qb} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function FolderBox({
+  title,
+  banks,
+  subs = [],
+}: {
+  title: string;
+  banks: Bank[];
+  subs?: { key: string; title: string; banks: Bank[] }[];
+}) {
+  const total = banks.length + subs.reduce((n, s) => n + s.banks.length, 0);
   return (
     <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-5">
         <Folder size={22} className="shrink-0 text-indigo-500" />
         <div className="flex-1">
           <div className="font-medium">{title}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            {banks.length} question bank{banks.length === 1 ? "" : "s"}
-          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{count(total)}</div>
         </div>
         <ChevronRight
           size={18}
@@ -49,6 +102,9 @@ function FolderBox({ title, banks }: { title: string; banks: Bank[] }) {
       <div className="space-y-3 border-t border-gray-200 p-4 dark:border-gray-800">
         {banks.map((qb) => (
           <BankCard key={qb.slug} qb={qb} />
+        ))}
+        {subs.map((s) => (
+          <SubFolderBox key={s.key} title={s.title} banks={s.banks} />
         ))}
       </div>
     </details>
@@ -65,8 +121,9 @@ export default async function Home() {
     .from("v_qbank_summary")
     .select("slug, title, description, question_count");
   const { data: dates } = await supabase.from("qbanks").select("slug, created_at");
-  // separate query so the page still works before the folder column exists
+  // separate queries so the page still works before these columns exist
   const { data: folderRows } = await supabase.from("qbanks").select("slug, folder");
+  const { data: subRows } = await supabase.from("qbanks").select("slug, subfolder");
 
   // oldest upload first, newest at the bottom
   const uploaded = new Map((dates ?? []).map((d) => [d.slug, d.created_at as string]));
@@ -77,8 +134,10 @@ export default async function Home() {
   const folderOf = new Map(
     (folderRows ?? []).map((r) => [r.slug as string, (r.folder as string | null) ?? null])
   );
+  const subOf = new Map(
+    (subRows ?? []).map((r) => [r.slug as string, (r.subfolder as string | null) ?? null])
+  );
   const known = new Set(FOLDERS.map((f) => f.key));
-  const inFolder = (key: string) => qbanks.filter((b) => folderOf.get(b.slug) === key);
   const unfiled = qbanks.filter((b) => !known.has(folderOf.get(b.slug) ?? ""));
   const anyFiled = unfiled.length < qbanks.length;
 
@@ -95,8 +154,17 @@ export default async function Home() {
         ) : (
           <>
             {FOLDERS.map((f) => {
-              const banks = inFolder(f.key);
-              return banks.length ? <FolderBox key={f.key} title={f.title} banks={banks} /> : null;
+              const inFolder = qbanks.filter((b) => folderOf.get(b.slug) === f.key);
+              const validSubs = new Set(f.subfolders.map((s) => s.key));
+              // banks without a (valid) subfolder sit directly in the folder
+              const loose = inFolder.filter((b) => !validSubs.has(subOf.get(b.slug) ?? ""));
+              const subs = f.subfolders.map((s) => ({
+                ...s,
+                banks: inFolder.filter((b) => subOf.get(b.slug) === s.key),
+              }));
+              // a folder with subfolders is always shown; one without is shown once it has banks
+              if (!inFolder.length && !f.subfolders.length) return null;
+              return <FolderBox key={f.key} title={f.title} banks={loose} subs={subs} />;
             })}
             {unfiled.length > 0 && <FolderBox title="Other" banks={unfiled} />}
           </>

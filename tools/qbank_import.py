@@ -50,6 +50,20 @@ RE_RATIONALE = re.compile(r"^([A-J])\)\s*(Correct|Incorrect)\s*[:\-\u2013\u2014]
 RE_OBJECTIVE = re.compile(r"^Objective\s*:\s*([\d][\d\-]*)\s*[:\-\u2013\u2014]?\s*(.*)$", re.I)
 
 
+def canonical_code(code):
+    """The school's own numbering: '00-13384' -> '13384', '03-08080' -> '03-8080'.
+
+    Some documents write objective codes padded with zeros (and '00-' when the code has
+    no prefix). The learning-objective spreadsheets, and so the Performance page's case
+    grouping, use the plain form. Codes already in the plain form are left alone.
+    """
+    m = re.fullmatch(r"(\d\d)-0*(\d+)", code)
+    if not m:
+        return code
+    prefix, number = m.groups()
+    return number if prefix == "00" else f"{prefix}-{number}"
+
+
 def norm(s):
     return re.sub(r"\s+", " ", s or "").strip().lower().rstrip(".")
 
@@ -105,7 +119,7 @@ def read_blocks(path):
 # parse
 # --------------------------------------------------------------------------
 
-def parse(blocks):
+def parse(blocks, keep_codes=False):
     errors = []
     questions = collections.OrderedDict()
     keys = {}
@@ -177,7 +191,8 @@ def parse(blocks):
             continue
         m = RE_OBJECTIVE.match(text)
         if m:
-            k["objective"] = (m.group(1), m.group(2).strip())
+            code = m.group(1) if keep_codes else canonical_code(m.group(1))
+            k["objective"] = (code, m.group(2).strip())
             last_rat = None
             continue
         if last_rat:
@@ -378,6 +393,9 @@ def main():
     ap.add_argument("--case", type=int, choices=range(1, 15), metavar="1-14",
                     help="put the bank in the Case Review subfolder 'Case N' "
                          "(needs migration_017.sql; implies --folder case-review)")
+    ap.add_argument("--keep-codes", action="store_true",
+                    help="keep objective codes exactly as written (by default zero-padded "
+                         "codes like 00-13384 are converted to the school's 13384)")
     ap.add_argument("--image-root", help=argparse.SUPPRESS)
     ap.add_argument("--seed", type=int, default=20260913)
     args = ap.parse_args()
@@ -394,7 +412,7 @@ def main():
     outdir = pathlib.Path(args.outdir) if args.outdir else src.parent
     slug = slugify(args.bank)
 
-    questions, keys, errors = parse(read_blocks(src))
+    questions, keys, errors = parse(read_blocks(src), args.keep_codes)
     warnings = validate(questions, keys, errors)
 
     print(f"\n{src.name}", file=sys.stderr)

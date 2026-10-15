@@ -8,7 +8,7 @@ Writes migrations\\migration_cases_data.sql (or --out): paste it into the
 Supabase SQL Editor. Safe to re-run — it only adds or updates, so when a new
 case's spreadsheet is released, run this again with ALL the case files.
 
-Each spreadsheet needs a "Case" column (e.g. "05-Wellness Emma Wilson, Well
+Each spreadsheet needs a "Case" column (e.g. "05-Wellness <Patient name>, Well
 Infant (Case 5)") and a "Session Objective #" column. Rows whose case has no
 number (e.g. "Wellness-No Specific Case") are skipped.
 
@@ -90,15 +90,19 @@ def main():
                 case, code = (r[ci] or "").strip(), (r[oi] or "").strip()
                 if not code:
                     continue
-                m = re.search(r"\(Case\s*(\d+)\)", case)
+                m = re.search(r"\(Case\s*(\d+)\)", case, re.I)
                 if not m:
                     skipped += 1
                     continue
                 n = int(m.group(1))
                 pairs[n].add(code)
-                t = re.match(r"\d+-Wellness\s+(.*?)\s*\(Case", case)
+                t = re.match(r"\d+-Wellness\s+(.*?)\s*\(Case", case, re.I)
                 if t:
-                    titles[n] = t.group(1)
+                    # "<Patient name>, College Athlete" -> "College Athlete". Only the
+                    # generic descriptor after the comma is kept, never the person's name;
+                    # with no comma we can't tell a name from a descriptor, so no title.
+                    full = t.group(1)
+                    titles[n] = full.split(",", 1)[1].strip() if "," in full else ""
 
     if not pairs:
         sys.exit("No case/objective rows found. Check the spreadsheets' column names.")

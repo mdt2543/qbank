@@ -276,16 +276,18 @@ def balance(questions, keys, seed):
 # output
 # --------------------------------------------------------------------------
 
-def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfolder=None):
+def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfolder=None,
+                  image_root=None):
     # one folder per bank: <slug>-upload/<slug>/<files>. The inner folder is what you drag
     # into the bucket, and image_path in the database is "<slug>/<file>".
-    imgdir = outdir / f"{slug}-upload"
+    # (image_root, used by bulk_import.py, writes <image_root>/<slug>/ directly instead)
+    imgdir = pathlib.Path(image_root) if image_root else outdir / f"{slug}-upload"
     bankdir = imgdir / slug
     image_names = {}
     for n, q in questions.items():
         if q["images"]:
             ext, blob = q["images"][0]
-            name = f"{slug}-q{n:02d}{ext}"
+            name = f"q{n:02d}{ext}"
             bankdir.mkdir(parents=True, exist_ok=True)
             (bankdir / name).write_bytes(blob)
             image_names[n] = f"{slug}/{name}"
@@ -376,6 +378,7 @@ def main():
     ap.add_argument("--case", type=int, choices=range(1, 15), metavar="1-14",
                     help="put the bank in the Case Review subfolder 'Case N' "
                          "(needs migration_017.sql; implies --folder case-review)")
+    ap.add_argument("--image-root", help=argparse.SUPPRESS)
     ap.add_argument("--seed", type=int, default=20260913)
     args = ap.parse_args()
 
@@ -411,7 +414,8 @@ def main():
     after = collections.Counter(keys[n]["letter"] for n in questions)
 
     outdir.mkdir(parents=True, exist_ok=True)
-    sql_path, imgdir, image_names = write_outputs(questions, keys, args.bank, slug, outdir, args.draft, args.folder, subfolder)
+    sql_path, imgdir, image_names = write_outputs(questions, keys, args.bank, slug, outdir, args.draft, args.folder, subfolder,
+                                                  args.image_root)
 
     letters = sorted({L for q in questions.values() for L in q["choices"]})
     dist = "  ".join(f"{L}={after.get(L, 0)}" for L in letters)

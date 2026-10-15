@@ -44,3 +44,6 @@ next-env.d.ts
 # python
 __pycache__/
 *.pyc
+
+# supabase CLI link info (machine-local)
+supabase/.temp/

@@ -9,7 +9,7 @@ each .docx there with qbank_import.py. Documents elsewhere (reference folders, d
 are ignored. A document named "Case 8 - Something.docx" is filed under Case Review,
 subfolder "Case 8"; other documents go to --folder (or stay unfiled).
 
-Writes, into --out (default: Bulk Upload on your Desktop):
+Writes, into --out (default: <project>\\temp\\bulk-upload):
     images\\             select EVERYTHING inside this folder and drag it into the
                         qbank-images bucket in one go (one subfolder per bank)
     sql\\00-hide-existing-banks.sql   hides every bank that is not in this batch
@@ -46,7 +46,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", help="folder that contains the 'Upload...' folders")
-    ap.add_argument("--out", help="output folder (default: 'Bulk Upload' on the Desktop)")
+    ap.add_argument("--out", help="output folder (default: <project>\\temp\\bulk-upload)")
     ap.add_argument("--folder", choices=["case-review", "exam-prep"],
                     help="home-page folder for documents not named 'Case N'")
     ap.add_argument("--marker", default="Upload",
@@ -86,7 +86,7 @@ def main():
     if args.dry_run:
         return
 
-    out = pathlib.Path(args.out) if args.out else pathlib.Path.home() / "Desktop" / "Bulk Upload"
+    out = pathlib.Path(args.out) if args.out else HERE.parent / "temp" / "bulk-upload"
     if out.exists() and any(out.iterdir()) and not (out / MARKER).exists():
         sys.exit(f"{out} already exists and was not created by this tool. Choose another --out.")
     out.mkdir(parents=True, exist_ok=True)

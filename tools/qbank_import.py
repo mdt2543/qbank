@@ -4,7 +4,7 @@ qbank_import.py — import a Qbank written in the standard format.
 
     python tools\\qbank_import.py "path\\to\\bank.docx" --bank "Hand, Wrist & Forearm"
 
-Produces, next to the document (or in --outdir):
+Produces, in <project>\\temp\\<slug> (or in --outdir):
     <slug>.seed.sql          paste into the Supabase SQL Editor
     <slug>-upload\\<slug>\\  the bank's pictures: drag the inner <slug> folder into
                              the qbank-images bucket FIRST. Each bank then lives in
@@ -418,7 +418,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", help="the .docx Qbank")
     ap.add_argument("--bank", required=True, help='display title, e.g. "Hand, Wrist & Forearm"')
-    ap.add_argument("--outdir", help="where to write outputs (default: beside the document)")
+    ap.add_argument("--outdir", help="where to write outputs (default: <project>\\temp\\<slug>)")
     ap.add_argument("--balance", action="store_true",
                     help="reorder options so correct answers spread evenly across A–E")
     ap.add_argument("--draft", action="store_true",
@@ -448,8 +448,10 @@ def main():
     src = pathlib.Path(args.input)
     if not src.exists():
         sys.exit(f"File not found: {src}")
-    outdir = pathlib.Path(args.outdir) if args.outdir else src.parent
     slug = slugify(args.bank)
+    # default: <project>/temp/<slug> (git-ignored), not next to the document or on the Desktop
+    outdir = (pathlib.Path(args.outdir) if args.outdir
+              else pathlib.Path(__file__).resolve().parent.parent / "temp" / slug)
 
     questions, keys, errors = parse(read_blocks(src), args.keep_codes)
     warnings = validate(questions, keys, errors)

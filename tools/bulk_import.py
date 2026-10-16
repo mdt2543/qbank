@@ -53,6 +53,9 @@ def main():
                     help="only folders whose name starts with this are read (default: Upload)")
     ap.add_argument("--max-kb", type=int, default=900,
                     help="rough size limit for each combined SQL file (default 900)")
+    ap.add_argument("--captions-only", action="store_true",
+                    help="only write SQL that fixes picture captions on banks already uploaded "
+                         "(no pictures, no bank files, no hiding; touches no options or answers)")
     ap.add_argument("--dry-run", action="store_true", help="list what would be done, write nothing")
     args = ap.parse_args()
 
@@ -98,7 +101,11 @@ def main():
         # short work folders: Windows rejects paths past ~260 characters
         work = out / "w" / str(i)
         cmd = [sys.executable, str(HERE / "qbank_import.py"), str(f), "--bank", title,
-               "--balance", "--outdir", str(work), "--image-root", str(out / "images")]
+               "--outdir", str(work)]
+        if args.captions_only:
+            cmd += ["--captions-only"]
+        else:
+            cmd += ["--balance", "--image-root", str(out / "images")]
         if case:
             cmd += ["--case", str(case)]
         elif args.folder:
@@ -110,10 +117,11 @@ def main():
             continue
         warns = [l.strip() for l in err.splitlines() if l.strip().startswith("!")]
         nq = re.search(r"(\d+) questions, (\d+) with images", err)
-        done.append((title, slug, work / f"{slug}.seed.sql", nq.groups() if nq else ("?", "?"), warns))
+        fname = f"{slug}.captions.sql" if args.captions_only else f"{slug}.seed.sql"
+        done.append((title, slug, work / fname, nq.groups() if nq else ("?", "?"), warns))
 
     # hide every existing bank that is not part of this batch
-    if done:
+    if done and not args.captions_only:
         keep = ", ".join(qi.esc(slug) for _, slug, *_ in done)
         (out / "sql" / "00-hide-existing-banks.sql").write_text(
             "-- Hides every bank on the site EXCEPT the ones in this batch. Nothing is deleted:\n"
@@ -135,7 +143,8 @@ def main():
     if cur:
         parts.append(cur)
     for i, chunk in enumerate(parts, 1):
-        (out / "sql" / f"{i:02d}-banks.sql").write_text("\n".join(chunk), encoding="utf-8")
+        kind = "captions" if args.captions_only else "banks"
+        (out / "sql" / f"{i:02d}-{kind}.sql").write_text("\n".join(chunk), encoding="utf-8")
     shutil.rmtree(out / "w", ignore_errors=True)
 
     print(f"\n=== {len(done)} converted, {len(failed)} failed ===\n")
@@ -147,7 +156,12 @@ def main():
         print(f"  FAIL {title}")
         for e in errs[:8]:
             print(f"         {e}")
-    if done:
+    if done and args.captions_only:
+        print(f"\nOutput: {out}")
+        print("  Caption fix only: run each of these (in order) against the live database:")
+        for i in range(1, len(parts) + 1):
+            print(f"       sql\\{i:02d}-captions.sql")
+    elif done:
         print(f"\nOutput: {out}")
         print("  1. Pictures. Either open the images folder, select everything inside and drag it into")
         print("     Supabase > Storage > qbank-images, or upload each bank folder from a terminal in the")

@@ -925,7 +925,7 @@ export default function Runner({
                       />
                     </a>
                     {qq.image_caption && (
-                      <figcaption className="mt-2 text-[0.75em] text-gray-400">{qq.image_caption}</figcaption>
+                      <figcaption className="mt-2 text-[0.75em] italic text-gray-300">{qq.image_caption}</figcaption>
                     )}
                   </figure>
                 )}
@@ -1232,7 +1232,7 @@ export default function Runner({
                     />
                   </a>
                   {q.image_caption && (
-                    <figcaption className="mt-2 text-[0.75em] text-gray-400">{q.image_caption}</figcaption>
+                    <figcaption className="mt-2 text-[0.75em] italic text-gray-300">{q.image_caption}</figcaption>
                   )}
                 </figure>
               )}

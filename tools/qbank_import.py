@@ -47,6 +47,10 @@ RE_CHOICE = re.compile(r"^([A-J])\)\s+(.+)$")
 RE_KEYSEC = re.compile(r"^answer\s+key\b", re.I)
 RE_KEYHEAD = re.compile(r"^Question\s+(\d{1,3})\s*:\s*([A-J])\)\s*(.*)$", re.I)
 RE_RATIONALE = re.compile(r"^([A-J])\)\s*(Correct|Incorrect)\s*[:\-\u2013\u2014]\s*(.+)$", re.I)
+# A citation line right under a picture, e.g. "Image: Bassett Collection ..., CC BY-SA 4.0".
+RE_CITE = re.compile(
+    r"^\s*(image|photo|photograph|figure|source|credit|illustration|diagram|micrograph|radiograph)"
+    r"\s*(credit|source)?\s*[:\u2013\u2014\-]", re.I)
 RE_OBJECTIVE = re.compile(r"^Objective\s*:\s*([\d][\d\-]*)\s*[:\-\u2013\u2014]?\s*(.*)$", re.I)
 
 
@@ -127,6 +131,7 @@ def parse(blocks, keep_codes=False):
     q = None      # current question
     k = None      # current key entry
     last_rat = None
+    last_img = None   # the question whose picture was just seen
 
     for kind, val in blocks:
         if kind == "image":
@@ -135,9 +140,19 @@ def parse(blocks, keep_codes=False):
                               "nothing to attach to.")
                 continue
             q["images"].append(val)
+            last_img = q
             continue
 
         text = val
+
+        # a citation line directly under a picture is the picture's caption, not part
+        # of the question text
+        if (phase == "questions" and q is not None and last_img is q
+                and not q["choices"] and not q["caption"] and RE_CITE.match(text)):
+            q["caption"] = text.strip()
+            last_img = None
+            continue
+        last_img = None
 
         if RE_KEYSEC.match(text) and len(text) < 40:
             phase = "key"
@@ -151,7 +166,7 @@ def parse(blocks, keep_codes=False):
                 if n in questions:
                     errors.append(f"Question {n} appears twice in the questions section.")
                 q = {"num": n, "title": (m.group(2) or "").strip(), "stem": [],
-                     "choices": collections.OrderedDict(), "images": []}
+                     "choices": collections.OrderedDict(), "images": [], "caption": None}
                 questions[n] = q
                 phase = "questions"
                 continue
@@ -355,7 +370,8 @@ def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfo
             f"values ({esc(ref)},",
             f"        (select id from qbanks where slug = {esc(slug)}),",
             f"        (select id from topics where name = {esc(topics[n])}),",
-            f"        {esc(stem)}, NULL, {esc(image_names.get(n))}, NULL)",
+            f"        {esc(stem)}, NULL, {esc(image_names.get(n))}, "
+            f"{esc(q['caption']) if n in image_names else 'NULL'})",
             "on conflict (external_ref) do update set",
             "  qbank_id = excluded.qbank_id, topic_id = excluded.topic_id,",
             "  stem = excluded.stem, explanation = excluded.explanation,",
@@ -373,6 +389,26 @@ def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfo
     sql_path = outdir / f"{slug}.seed.sql"
     sql_path.write_text("\n".join(out) + "\n", encoding="utf-8")
     return sql_path, imgdir, image_names
+
+
+def write_captions(questions, bank, slug, outdir):
+    """SQL that only moves each picture citation out of the question text into the
+    picture's caption. It touches no answer options and no student answers."""
+    out = [f"-- {bank}: picture captions. Moves each citation out of the question text.",
+           "-- Changes only the question text and caption; options and answers are untouched.",
+           "begin;"]
+    n_fix = 0
+    for n, q in questions.items():
+        if q["caption"] and q["images"]:
+            ref = f"{slug}-q{n:03d}"
+            out.append("update questions set stem = " + esc("\n\n".join(q["stem"]))
+                       + ", image_caption = " + esc(q["caption"])
+                       + f" where external_ref = {esc(ref)};")
+            n_fix += 1
+    out.append("commit;")
+    path = outdir / f"{slug}.captions.sql"
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return path, n_fix
 
 
 # --------------------------------------------------------------------------
@@ -393,6 +429,9 @@ def main():
     ap.add_argument("--case", type=int, choices=range(1, 15), metavar="1-14",
                     help="put the bank in the Case Review subfolder 'Case N' "
                          "(needs migration_017.sql; implies --folder case-review)")
+    ap.add_argument("--captions-only", action="store_true",
+                    help="write only SQL that fixes picture captions on a bank already "
+                         "uploaded (touches no options or student answers)")
     ap.add_argument("--keep-codes", action="store_true",
                     help="keep objective codes exactly as written (by default zero-padded "
                          "codes like 00-13384 are converted to the school's 13384)")
@@ -425,6 +464,13 @@ def main():
         for e in errors:
             print(f"  ✗ {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.captions_only:
+        outdir.mkdir(parents=True, exist_ok=True)
+        cap_path, n_fix = write_captions(questions, args.bank, slug, outdir)
+        print(f"  captions found: {n_fix}", file=sys.stderr)
+        print(f"\nwrote {cap_path}", file=sys.stderr)
+        return
 
     before = collections.Counter(keys[n]["letter"] for n in questions)
     if args.balance:

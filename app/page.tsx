@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { ChevronRight, Folder } from "lucide-react";
+import AnnouncementBar from "@/components/announcement-bar";
 
 type Sub = { key: string; title: string };
 
@@ -121,6 +122,8 @@ export default async function Home() {
     .from("v_qbank_summary")
     .select("slug, title, description, question_count");
   const { data: dates } = await supabase.from("qbanks").select("slug, created_at");
+  // live announcements this student has not dismissed (an error, e.g. SQL not run yet, means none)
+  const { data: announcements } = await supabase.rpc("current_announcements");
   // separate queries so the page still works before these columns exist
   const { data: folderRows } = await supabase.from("qbanks").select("slug, folder");
   const { data: subRows } = await supabase.from("qbanks").select("slug, subfolder");
@@ -143,6 +146,7 @@ export default async function Home() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
+      <AnnouncementBar items={(announcements ?? []) as { id: string; message: string; level: string }[]} />
       <h1 className="text-2xl font-semibold">Question banks</h1>
 
       <div className="mt-8 space-y-3">

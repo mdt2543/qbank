@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Announcements, { type AdminAnnouncement } from "./announcements";
 import { createClient } from "@/lib/supabase/server";
 
 type Activity = {
@@ -83,6 +84,7 @@ export default async function Admin({
   const { data: banksData } = await supabase.rpc("admin_bank_summary");
   const { data: actData } = await supabase.rpc("admin_student_activity");
   const { data: fbData } = await supabase.rpc("admin_feedback");
+  const { data: annData } = await supabase.rpc("admin_announcements");
 
   const ov = (overview as { accounts: number; active_7d: number; answers: number }[] | null)?.[0];
   const banks = (banksData ?? []) as BankRow[];
@@ -127,6 +129,9 @@ export default async function Admin({
           </div>
         ))}
       </div>
+
+      <h2 className="mt-10 text-sm font-medium">Announcements</h2>
+      <Announcements items={(annData ?? []) as AdminAnnouncement[]} />
 
       <h2 className="mt-10 text-sm font-medium">By question bank</h2>
       <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">

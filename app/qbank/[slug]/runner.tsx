@@ -103,11 +103,13 @@ export default function Runner({
   title,
   userId,
   jumpscares,
+  hidden = false,
 }: {
   slug: string;
   title: string;
   userId: string;
   jumpscares: boolean;
+  hidden?: boolean;
 }) {
   const supabase = createClient();
   const [phase, setPhase] = useState<"idle" | "loading" | "active" | "done">("idle");
@@ -595,6 +597,13 @@ export default function Runner({
           ← All banks
         </Link>
         <h1 className="mt-4 text-2xl font-semibold">{title}</h1>
+
+        {hidden && (
+          <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+            This bank is hidden from students. You can see it because you are an admin. Answers
+            you give here count toward your own stats like any other.
+          </p>
+        )}
 
         {counts && (
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">

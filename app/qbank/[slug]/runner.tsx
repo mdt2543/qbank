@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  NotebookPen,
+  Calculator,
   ArrowRight,
   Bookmark,
   Check,
@@ -20,6 +22,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import HighlightedText, { type Range, type Tool } from "./highlight";
 import FeedbackForm from "./feedback-form";
+import SessionCalculator from "@/components/session-calculator";
 
 type Question = {
   id: string;
@@ -142,6 +145,10 @@ export default function Runner({
   const [struck, setStruck] = useState<Record<string, Record<string, boolean>>>({});
   const [zoom, setZoom] = useState(100);
   const [navOpen, setNavOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<"review" | "notes">("review");
+  const [notes, setNotes] = useState("");
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcLoaded, setCalcLoaded] = useState(false); // the calculator keeps its contents once opened
   const [navFilter, setNavFilter] = useState<"all" | "unanswered" | "answered" | "flagged">("all");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reviewPage, setReviewPage] = useState(0);
@@ -306,7 +313,11 @@ export default function Runner({
       }
     }
     const firstOpen = ordered.findIndex((qq) => !ans[qq.id] && !picks[qq.id]);
-    let marks: { hl?: Record<string, Range[]>; struck?: Record<string, Record<string, boolean>> } = {};
+    let marks: {
+      hl?: Record<string, Range[]>;
+      struck?: Record<string, Record<string, boolean>>;
+      notes?: string;
+    } = {};
     if (resume) {
       try {
         marks = JSON.parse(localStorage.getItem(`qbank-marks:${id}`) ?? "{}");
@@ -333,6 +344,9 @@ export default function Runner({
     setConfirmOpen(false);
     setHl(marks.hl ?? {});
     setStruck(marks.struck ?? {});
+    setNotes(marks.notes ?? "");
+    setPanelTab("review");
+    setCalcOpen(false);
     setScore(null);
     timer.current = Date.now();
     setPhase("active");
@@ -533,9 +547,9 @@ export default function Runner({
   useEffect(() => {
     if (!attemptId || phase !== "active") return;
     try {
-      localStorage.setItem(`qbank-marks:${attemptId}`, JSON.stringify({ hl, struck }));
+      localStorage.setItem(`qbank-marks:${attemptId}`, JSON.stringify({ hl, struck, notes }));
     } catch {}
-  }, [hl, struck, attemptId, phase]);
+  }, [hl, struck, notes, attemptId, phase]);
 
   useEffect(() => {
     supabase.rpc("qbank_counts", { p_qbank_slug: slug }).then(({ data }) => {
@@ -547,6 +561,13 @@ export default function Runner({
   useEffect(() => {
     if (phase !== "active" || confirmOpen) return;
     function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest?.(
+          "input, textarea, select, math-field, [contenteditable='true'], [data-no-shortcuts]"
+        )
+      )
+        return;
       const q = questions[index];
       if (!q) return;
       const a = answers[q.id];
@@ -1208,6 +1229,27 @@ export default function Runner({
               </button>
               <span className="mx-2 h-5 w-px bg-neutral-700" />
               <button
+                onClick={() => {
+                  setCalcLoaded(true);
+                  setCalcOpen((o) => !o);
+                }}
+                className={tb(calcOpen)}
+                title="Calculator"
+              >
+                <Calculator size={18} />
+              </button>
+              <button
+                onClick={() => {
+                  setPanelTab("notes");
+                  setNavOpen(true);
+                }}
+                className={tb(navOpen && panelTab === "notes")}
+                title="Notepad"
+              >
+                <NotebookPen size={18} />
+              </button>
+              <span className="mx-2 h-5 w-px bg-neutral-700" />
+              <button
                 onClick={toggleFlag}
                 className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
               >
@@ -1342,18 +1384,62 @@ export default function Runner({
           </button>
           {navOpen && (
             <aside className="flex w-80 flex-col border-l border-neutral-800 bg-neutral-950">
-              <p className="border-b border-neutral-800 px-4 py-2.5 text-sm font-medium text-gray-300">
-                Review
-              </p>
-              <div className="border-b border-neutral-800 px-4 py-2.5">{legend(true)}</div>
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="grid grid-cols-5 justify-items-center gap-3">
-                  {shown.map(({ qq, i }) => circle(qq, i, () => jump(i)))}
-                </div>
-                {shown.length === 0 && (
-                  <p className="text-center text-sm text-gray-500">No questions match.</p>
-                )}
+              <div className="flex border-b border-neutral-800 text-sm">
+                {(
+                  [
+                    { key: "review", label: "Review" },
+                    { key: "notes", label: "Notepad" },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setPanelTab(t.key)}
+                    className={`flex-1 px-4 py-2.5 font-medium ${
+                      panelTab === t.key
+                        ? "border-b-2 border-indigo-400 text-white"
+                        : "text-gray-400 hover:text-gray-200"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
+              {panelTab === "review" ? (
+                <>
+                  <div className="border-b border-neutral-800 px-4 py-2.5">{legend(true)}</div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="grid grid-cols-5 justify-items-center gap-3">
+                      {shown.map(({ qq, i }) => circle(qq, i, () => jump(i)))}
+                    </div>
+                    {shown.length === 0 && (
+                      <p className="text-center text-sm text-gray-500">No questions match.</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col" data-no-shortcuts>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Type your notes here."
+                    spellCheck={false}
+                    className="min-h-0 flex-1 resize-none bg-neutral-900 p-4 text-sm leading-relaxed text-gray-100 outline-none placeholder:text-gray-600"
+                  />
+                  <div className="flex items-center justify-between border-t border-neutral-800 px-4 py-2 text-xs text-gray-500">
+                    <span>Kept on this device for this session.</span>
+                    {notes && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Clear your notes?")) setNotes("");
+                        }}
+                        className="underline hover:text-gray-300"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </aside>
           )}
         </div>
@@ -1421,6 +1507,8 @@ export default function Runner({
           </div>
         </div>
       )}
+
+      {calcLoaded && <SessionCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />}
 
       {scare && (
         <div

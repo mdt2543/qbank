@@ -62,9 +62,10 @@ const STEPS: Step[] = [
     body: (
       <p>
         Highlight text in the question, strike out answer choices, zoom in or out, and use{" "}
-        <b>Mark for Review</b> to flag a question. Open the panel on the right edge to see every
-        question at a glance and jump to any of them. Keyboard shortcuts: 1–5 to choose, Enter for
-        next, F to flag.
+        <b>Mark for Review</b> to flag a question. The <b>calculator</b> (a full math keypad you can
+        drag around) and the <b>notepad</b> are in the same toolbar. Open the panel on the right
+        edge to see every question at a glance and jump to any of them. Keyboard shortcuts: 1–5 to
+        choose, Enter for next, F to flag.
       </p>
     ),
   },

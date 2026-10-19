@@ -2,15 +2,67 @@
 
 // Floating calculator for the question screen. Typeset math input (MathLive) with a
 // palette of functions; answers come from the Compute Engine (see lib/calc-eval.ts).
+// Pressing "=" moves the calculation into a history list and clears the entry box.
 // The two libraries are loaded only when the calculator is first opened.
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Delete, X } from "lucide-react";
 import type { MathfieldElement } from "mathlive";
-import { evaluateLatex, type CalcResult, type Engine } from "@/lib/calc-eval";
+import { evaluateLatex, type Engine } from "@/lib/calc-eval";
 
 type Action = (mf: MathfieldElement) => void;
-type Key = { label: React.ReactNode; title: string; act: Action; tone?: "op" | "fn" };
+type Key = { label: React.ReactNode; title: string; act: Action };
+
+// one finished calculation: what was typed, and its answer
+type Entry = { latex: string; kind: "number" | "math" | "note"; value: string };
+const MAX_HISTORY = 50;
+
+// Load MathLive once, and point it at the fonts we serve ourselves.
+let mathlive: Promise<typeof import("mathlive")> | null = null;
+function loadMathlive() {
+  if (!mathlive) {
+    mathlive = import("mathlive").then((m) => {
+      m.MathfieldElement.fontsDirectory = "/mathlive/fonts";
+      m.MathfieldElement.soundsDirectory = null;
+      return m;
+    });
+  }
+  return mathlive;
+}
+
+/** typeset math that cannot be edited (used in the history) */
+function Typeset({ latex }: { latex: string }) {
+  const host = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    let gone = false;
+    let el: MathfieldElement | undefined;
+    loadMathlive().then(({ MathfieldElement }) => {
+      if (gone || !host.current) return;
+      el = new MathfieldElement();
+      el.readOnly = true;
+      el.mathVirtualKeyboardPolicy = "manual";
+      el.value = latex;
+      host.current.appendChild(el);
+    });
+    return () => {
+      gone = true;
+      el?.remove();
+    };
+  }, [latex]);
+  return <span ref={host} className="calc-field calc-hist block" />;
+}
+
+const storageName = (key: string) => `qbank-calc:${key}`;
+
+function readHistory(key?: string): Entry[] {
+  if (!key || typeof window === "undefined") return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageName(key)) ?? "[]");
+    return Array.isArray(raw) ? (raw as Entry[]).slice(-MAX_HISTORY) : [];
+  } catch {
+    return [];
+  }
+}
 
 const put =
   (latex: string): Action =>
@@ -74,23 +126,51 @@ const FUNCTIONS: Key[] = [
 export default function SessionCalculator({
   open,
   onClose,
+  storageKey,
 }: {
   open: boolean;
   onClose: () => void;
+  /** keeps the history on this device for the session, e.g. the attempt id */
+  storageKey?: string;
 }) {
   const inputHost = useRef<HTMLDivElement>(null);
-  const resultHost = useRef<HTMLDivElement>(null);
   const mfRef = useRef<MathfieldElement | null>(null);
-  const resultRef = useRef<MathfieldElement | null>(null);
   const engine = useRef<Engine | null>(null);
   const evalRef = useRef<() => void>(() => {});
+  const tape = useRef<HTMLDivElement>(null);
 
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [result, setResult] = useState<CalcResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<Entry[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [last, setLast] = useState<string | null>(null); // last numeric answer, for "Ans"
-  const [pos, setPos] = useState({ x: 16, y: 150 });
+  const [pos, setPos] = useState({ x: 16, y: 100 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
+
+  // bring back this session's history once the page is up (not while rendering, so the
+  // server and browser versions of the page always match)
+  useEffect(() => {
+    const prev = readHistory(storageKey);
+    setHistory(prev);
+    const lastNumber = [...prev].reverse().find((e) => e.kind === "number");
+    setLast(lastNumber ? lastNumber.value : null);
+    setHydrated(true);
+  }, [storageKey]);
+
+  // keep the history for the session
+  useEffect(() => {
+    if (!storageKey || !hydrated) return;
+    try {
+      localStorage.setItem(storageName(storageKey), JSON.stringify(history));
+    } catch {}
+  }, [history, hydrated, storageKey]);
+
+  // newest calculation in view
+  useEffect(() => {
+    const el = tape.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [history.length]);
 
   // Load the libraries once, the first time the window is shown.
   useEffect(() => {
@@ -99,12 +179,10 @@ export default function SessionCalculator({
     (async () => {
       try {
         const [{ MathfieldElement }, { ComputeEngine }] = await Promise.all([
-          import("mathlive"),
+          loadMathlive(),
           import("@cortex-js/compute-engine"),
         ]);
-        if (disposed || !inputHost.current || !resultHost.current) return;
-        MathfieldElement.fontsDirectory = "/mathlive/fonts";
-        MathfieldElement.soundsDirectory = null;
+        if (disposed || !inputHost.current) return;
         engine.current = new ComputeEngine() as unknown as Engine;
 
         const mf = new MathfieldElement();
@@ -125,12 +203,6 @@ export default function SessionCalculator({
         inputHost.current.appendChild(mf);
         mfRef.current = mf;
 
-        const out = new MathfieldElement();
-        out.readOnly = true;
-        out.mathVirtualKeyboardPolicy = "manual";
-        resultHost.current.appendChild(out);
-        resultRef.current = out;
-
         setReady(true);
         mf.focus();
       } catch {
@@ -146,21 +218,32 @@ export default function SessionCalculator({
   useEffect(
     () => () => {
       mfRef.current?.remove();
-      resultRef.current?.remove();
       mfRef.current = null;
-      resultRef.current = null;
     },
     []
   );
 
+  // "=": a good answer goes to the history and the box is cleared; a problem stays in the
+  // box (with a message) so it can be fixed
   function calculate() {
     const mf = mfRef.current;
     const ce = engine.current;
     if (!mf || !ce) return;
-    const r = evaluateLatex(ce, mf.getValue("latex"));
-    setResult(r);
-    if (r.ok && r.kind === "number") setLast(r.text);
-    if (resultRef.current) resultRef.current.value = r.ok && r.kind === "math" ? r.latex : "";
+    const latex = mf.getValue("latex");
+    const r = evaluateLatex(ce, latex);
+    if (!r.ok) {
+      setError(r.message);
+      return;
+    }
+    setError(null);
+    const entry: Entry =
+      r.kind === "math"
+        ? { latex, kind: "math", value: r.latex }
+        : { latex, kind: r.kind, value: r.text };
+    setHistory((h) => [...h, entry].slice(-MAX_HISTORY));
+    if (r.kind === "number") setLast(r.text);
+    mf.setValue("");
+    mf.focus();
   }
   evalRef.current = calculate;
 
@@ -169,14 +252,30 @@ export default function SessionCalculator({
     if (mf) act(mf);
   };
 
-  function clearAll() {
+  function clearEntry() {
     const mf = mfRef.current;
     if (mf) {
       mf.setValue("");
       mf.focus();
     }
-    setResult(null);
-    if (resultRef.current) resultRef.current.value = "";
+    setError(null);
+  }
+
+  // put a past calculation back in the box to change it
+  function reuse(e: Entry) {
+    const mf = mfRef.current;
+    if (!mf) return;
+    mf.setValue(e.latex);
+    mf.executeCommand("moveToMathfieldEnd" as never);
+    mf.focus();
+    setError(null);
+  }
+
+  // drop a past answer into the box
+  function insertAnswer(e: Entry) {
+    const mf = mfRef.current;
+    if (!mf || e.kind === "note") return;
+    mf.insert(e.value, { format: "latex", selectionMode: "after", focus: true });
   }
 
   // dragging the window by its title bar
@@ -202,8 +301,8 @@ export default function SessionCalculator({
     "flex h-9 items-center justify-center rounded text-sm font-medium transition-colors select-none";
   const keep = (e: React.MouseEvent) => e.preventDefault(); // keep the cursor in the input
 
-  const keypad: { label: React.ReactNode; act: Action; cls: string; span?: string; title: string }[] = [
-    { label: "C", title: "Clear", act: () => clearAll(), cls: "bg-neutral-700 text-red-300 hover:bg-neutral-600" },
+  const keypad: { label: React.ReactNode; act: Action; cls: string; title: string }[] = [
+    { label: "C", title: "Clear the entry", act: () => clearEntry(), cls: "bg-neutral-700 text-red-300 hover:bg-neutral-600" },
     { label: <Delete size={16} />, title: "Backspace", act: run("deleteBackward"), cls: "bg-neutral-700 hover:bg-neutral-600" },
     { label: "(", title: "Open bracket", act: putAfter("("), cls: "bg-neutral-700 hover:bg-neutral-600" },
     { label: ")", title: "Close bracket", act: putAfter(")"), cls: "bg-neutral-700 hover:bg-neutral-600" },
@@ -226,7 +325,7 @@ export default function SessionCalculator({
     { label: "−", title: "Subtract", act: putAfter("-"), cls: "bg-neutral-700 hover:bg-neutral-600" },
     { label: "=", title: "Work out the answer", act: () => calculate(), cls: "bg-indigo-600 text-white hover:bg-indigo-500 row-span-2 !h-auto" },
 
-    { label: "0", title: "0", act: putAfter("0"), cls: "bg-neutral-800 hover:bg-neutral-700 col-span-2", span: "2" },
+    { label: "0", title: "0", act: putAfter("0"), cls: "bg-neutral-800 hover:bg-neutral-700 col-span-2" },
     { label: ".", title: "Decimal point", act: putAfter("."), cls: "bg-neutral-800 hover:bg-neutral-700" },
     { label: "+", title: "Add", act: putAfter("+"), cls: "bg-neutral-700 hover:bg-neutral-600" },
   ];
@@ -236,8 +335,14 @@ export default function SessionCalculator({
       role="dialog"
       aria-label="Calculator"
       data-no-shortcuts
-      style={{ left: pos.x, top: pos.y, display: open ? undefined : "none" }}
-      className="fixed z-[55] w-[26rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-neutral-700 bg-[#1b1e24] text-gray-100 shadow-2xl"
+      style={{
+        left: pos.x,
+        top: pos.y,
+        // never taller than the space left on screen; scrolls inside if it has to
+        maxHeight: `calc(100vh - ${pos.y}px - 0.5rem)`,
+        display: open ? undefined : "none",
+      }}
+      className="fixed z-[55] w-[26rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-[#1b1e24] text-gray-100 shadow-2xl"
     >
       <div
         onPointerDown={onDown}
@@ -255,6 +360,48 @@ export default function SessionCalculator({
         </button>
       </div>
 
+      {history.length > 0 && (
+        <div className="border-b border-neutral-800 bg-neutral-950/60">
+          <div className="flex items-center justify-between px-3 pt-2 text-xs text-gray-500">
+            <span>History</span>
+            <button
+              onClick={() => setHistory([])}
+              className="underline hover:text-gray-300"
+              title="Remove everything from the history"
+            >
+              Clear history
+            </button>
+          </div>
+          <div ref={tape} className="max-h-32 space-y-1 overflow-y-auto px-3 pb-2 pt-1">
+            {history.map((h, i) => (
+              <div key={i} className="flex items-center justify-between gap-3">
+                <button
+                  onMouseDown={keep}
+                  onClick={() => reuse(h)}
+                  title="Put this back in the entry box"
+                  className="min-w-0 flex-1 overflow-x-auto rounded px-1 text-left hover:bg-neutral-800"
+                >
+                  <Typeset latex={h.latex} />
+                </button>
+                {h.kind === "note" ? (
+                  <span className="shrink-0 text-sm font-semibold text-indigo-200">{h.value}</span>
+                ) : (
+                  <button
+                    onMouseDown={keep}
+                    onClick={() => insertAnswer(h)}
+                    title="Use this answer"
+                    className="flex shrink-0 items-center gap-1 rounded px-1 text-sm font-semibold tabular-nums text-indigo-200 hover:bg-neutral-800"
+                  >
+                    <span>=</span>
+                    {h.kind === "number" ? <span>{h.value}</span> : <Typeset latex={h.value} />}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="px-3 pt-3">
         <div className="calc-field min-h-[3.25rem] rounded-md border border-neutral-700 bg-neutral-950 focus-within:border-indigo-500">
           <div ref={inputHost} />
@@ -265,23 +412,12 @@ export default function SessionCalculator({
             <p className="px-3 py-3 text-sm text-red-300">The calculator could not load. Reload the page.</p>
           )}
         </div>
-
-        <div className="calc-field mt-2 min-h-[2.25rem] px-1 text-right" aria-live="polite">
-          {result && result.ok && result.kind === "number" && (
-            <p className="select-text px-2 text-2xl font-semibold tabular-nums text-indigo-200">= {result.text}</p>
-          )}
-          {result && result.ok && result.kind === "note" && (
-            <p className="px-2 text-xl font-semibold text-indigo-200">{result.text}</p>
-          )}
-          {result && !result.ok && <p className="px-2 py-1 text-sm text-red-300">{result.message}</p>}
-          <div
-            ref={resultHost}
-            className={result && result.ok && result.kind === "math" ? "" : "hidden"}
-          />
+        <div className="min-h-[1.5rem] px-1 pt-1 text-right" aria-live="polite">
+          {error && <p className="text-sm text-red-300">{error}</p>}
         </div>
       </div>
 
-      <div className="grid grid-cols-8 gap-1 px-3 pt-3">
+      <div className="grid grid-cols-8 gap-1 px-3 pt-1">
         {FUNCTIONS.map((k, i) => (
           <button
             key={i}

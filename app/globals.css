@@ -94,3 +94,11 @@
   font-size: 1.35rem;
   color: #c7d2fe;
 }
+
+/* calculator history: small, and clicks go to the surrounding button */
+.calc-hist math-field {
+  font-size: 1.05rem;
+  padding: 0;
+  color: #d4d4d8;
+  pointer-events: none;
+}

@@ -460,6 +460,7 @@ export default function Runner({
     setAnswers(toAnswers(rev as ReviewRow[]));
     try {
       localStorage.removeItem(`qbank-marks:${attemptId}`);
+      localStorage.removeItem(`qbank-calc:${attemptId}`);
     } catch {}
     setResumable(null);
     setDeadline(null);
@@ -1508,7 +1509,13 @@ export default function Runner({
         </div>
       )}
 
-      {calcLoaded && <SessionCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />}
+      {calcLoaded && (
+        <SessionCalculator
+          open={calcOpen}
+          onClose={() => setCalcOpen(false)}
+          storageKey={attemptId ?? undefined}
+        />
+      )}
 
       {scare && (
         <div

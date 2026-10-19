@@ -63,16 +63,6 @@ function count(n: number) {
 }
 
 function SubFolderBox({ title, banks }: { title: string; banks: Bank[] }) {
-  // a subfolder with nothing in it yet is shown, but can't be opened
-  if (!banks.length) {
-    return (
-      <div className="flex items-center gap-3 rounded-lg border border-dashed border-gray-200 px-4 py-3 text-gray-400 dark:border-gray-800 dark:text-gray-600">
-        <Folder size={18} className="shrink-0" />
-        <span className="flex-1 text-sm">{title}</span>
-        <span className="text-xs">No question banks yet</span>
-      </div>
-    );
-  }
   return (
     <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
@@ -197,12 +187,15 @@ export default async function Home() {
               const validSubs = new Set(f.subfolders.map((s) => s.key));
               // banks without a (valid) subfolder sit directly in the folder
               const loose = inFolder.filter((b) => !validSubs.has(subOf.get(b.slug) ?? ""));
-              const subs = f.subfolders.map((s) => ({
-                ...s,
-                banks: inFolder.filter((b) => subOf.get(b.slug) === s.key),
-              }));
-              // a folder with subfolders is always shown; one without is shown once it has banks
-              if (!inFolder.length && !f.subfolders.length) return null;
+              // a subfolder (Case 1, Case 2 ...) only appears once it has a bank in it
+              const subs = f.subfolders
+                .map((s) => ({
+                  ...s,
+                  banks: inFolder.filter((b) => subOf.get(b.slug) === s.key),
+                }))
+                .filter((s) => s.banks.length > 0);
+              // and so does a folder
+              if (!inFolder.length) return null;
               return <FolderBox key={f.key} title={f.title} banks={loose} subs={subs} />;
             })}
             {unfiled.length > 0 && <FolderBox title="Other" banks={unfiled} />}

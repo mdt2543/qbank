@@ -33,6 +33,9 @@ export default async function QbankPage({
 
   if (!qbank) notFound();
 
+  // the Print link on past attempts is for admins only
+  const { data: adminFlag } = await supabase.rpc("is_site_admin");
+
   // opt-in setting; any error (e.g. column not created yet) means "off"
   const { data: prefs } = await supabase
     .from("student_profiles")
@@ -46,5 +49,6 @@ export default async function QbankPage({
       userId={user.id}
       jumpscares={prefs?.jumpscares ?? false}
       hidden={hidden}
+      isAdmin={adminFlag === true}
     />;
 }

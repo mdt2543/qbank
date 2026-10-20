@@ -107,12 +107,14 @@ export default function Runner({
   userId,
   jumpscares,
   hidden = false,
+  isAdmin = false,
 }: {
   slug: string;
   title: string;
   userId: string;
   jumpscares: boolean;
   hidden?: boolean;
+  isAdmin?: boolean;
 }) {
   const supabase = createClient();
   const [phase, setPhase] = useState<"idle" | "loading" | "active" | "done">("idle");
@@ -727,6 +729,16 @@ export default function Runner({
                       </p>
                     </div>
                     <div className="flex gap-2">
+                      {isAdmin && (
+                        <a
+                          href={`/qbank/${slug}/print/${h.id}?auto=1`}
+                          target="_blank"
+                          rel="noopener"
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 dark:border-gray-700"
+                        >
+                          Print
+                        </a>
+                      )}
                       <button
                         onClick={() => {
                           setDeleteError(null);

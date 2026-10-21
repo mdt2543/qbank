@@ -27,6 +27,10 @@ Log in first with `npx supabase login` (and `npx supabase logout` when you are d
    npx supabase db query --linked -f "migrations\migration_cases_data_caseN.sql"
    ```
 
+   Add `--sessions-out migrations\migration_case_sessions.sql` (pass ALL case files) to also
+   record which session each objective belongs to, then run that file. This is what the
+   Performance "By case" session dropdowns use.
+
    Use the reworded spreadsheet, not the "(BACKUP original)" one. Case titles are kept
    generic on purpose: the tool drops patient names.
 

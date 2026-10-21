@@ -122,14 +122,6 @@ function weakestFirst<T extends Metric>(rows: T[], latest: boolean, name: (r: T)
   });
 }
 
-// "Case 9 - Pharmacokinetics Practice Questions" -> "Pharmacokinetics"
-function sectionName(title: string) {
-  return title
-    .replace(/^\s*case\s*\d+\s*[-–—:]\s*/i, "")
-    .replace(/\s+practice questions\s*$/i, "")
-    .trim();
-}
-
 function sumMetrics(rows: Metric[]): Metric {
   const n = (f: (r: Metric) => number | string) => rows.reduce((s, r) => s + Number(f(r)), 0);
   const answered = n((r) => r.answered);
@@ -203,10 +195,10 @@ export default async function Performance({
     view === "case"
       ? await supabase.from("v_perf_case_objective").select("*")
       : { data: null };
-  // sections inside each case; if this view isn't installed yet, the plain list is shown
-  const { data: caseBankObjs } =
+  // sessions inside each case; if this view isn't installed yet, the plain list is shown
+  const { data: caseSessionObjs } =
     view === "case"
-      ? await supabase.from("v_perf_case_bank_objective").select("*")
+      ? await supabase.from("v_perf_case_session_objective").select("*")
       : { data: null };
   const { data: banks } =
     view === "bank" ? await supabase.from("v_perf_bank").select("*") : { data: null };
@@ -334,30 +326,32 @@ export default async function Performance({
                       <Bar pct={toPct(pick(c, latest))} />
                     </summary>
                     <div className="space-y-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-                      {caseBankObjs ? (
+                      {caseSessionObjs ? (
                         (() => {
-                          type CaseBankObj = Metric & {
+                          type CaseSessionObj = Metric & {
                             case_number: number;
-                            slug: string;
-                            bank: string;
-                            bank_created_at: string;
+                            session: string;
                             topic: string;
                             description: string | null;
                           };
-                          const mine = (caseBankObjs as CaseBankObj[]).filter((o) => o.case_number === c.case_number);
-                          const sections = new Map<string, { title: string; created: string; objs: CaseBankObj[] }>();
+                          const mine = (caseSessionObjs as CaseSessionObj[]).filter((o) => o.case_number === c.case_number);
+                          const sections = new Map<string, CaseSessionObj[]>();
                           for (const o of mine) {
-                            const s = sections.get(o.slug) ?? { title: o.bank, created: o.bank_created_at, objs: [] };
-                            s.objs.push(o);
-                            sections.set(o.slug, s);
+                            const list = sections.get(o.session) ?? [];
+                            list.push(o);
+                            sections.set(o.session, list);
                           }
                           return [...sections.entries()]
-                            .sort((a, b) => a[1].created.localeCompare(b[1].created))
-                            .map(([slug, s]) => {
-                              const total = sumMetrics(s.objs);
+                            .sort(
+                              (a, b) =>
+                                Number(a[0] === "Other objectives") - Number(b[0] === "Other objectives") ||
+                                a[0].localeCompare(b[0])
+                            )
+                            .map(([session, objs]) => {
+                              const total = sumMetrics(objs);
                               return (
                                 <details
-                                  key={slug}
+                                  key={session}
                                   className="group/sec rounded-lg border border-gray-200 dark:border-gray-800"
                                 >
                                   <summary className="cursor-pointer list-none p-3">
@@ -366,14 +360,14 @@ export default async function Performance({
                                         <span className="mr-2 inline-block text-gray-400 transition-transform group-open/sec:rotate-90">
                                           ▸
                                         </span>
-                                        {sectionName(s.title)}
+                                        {session}
                                       </span>
                                       <Score r={pick(total, latest)} />
                                     </div>
                                     <Bar pct={toPct(pick(total, latest))} />
                                   </summary>
                                   <div className="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
-                                    {weakestFirst(s.objs, latest, (o) => o.topic).map((o) => (
+                                    {weakestFirst(objs, latest, (o) => o.topic).map((o) => (
                                       <div key={o.topic}>
                                         <div className="flex items-baseline justify-between gap-4">
                                           <div>

@@ -2,85 +2,52 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
-type View = "objective" | "case" | "bank" | "progress";
+type View = "case" | "bank" | "progress";
 
 const TABS: { key: View; label: string }[] = [
-  { key: "objective", label: "By objective" },
   { key: "case", label: "By case" },
   { key: "bank", label: "By question bank" },
   { key: "progress", label: "Progress" },
 ];
 
-type Week = { week: string; answers: number | string; new_questions: number | string };
 
-const DAY = 24 * 60 * 60 * 1000;
+type AttemptRow = {
+  id: string;
+  submitted_at: string;
+  score_correct: number | null;
+  score_total: number | null;
+  qbanks: { slug: string; title: string };
+};
 
-// Fill in weeks with no activity so the chart has no gaps; show the latest 16.
-function fillWeeks(rows: Week[]) {
-  const by = new Map(rows.map((r) => [r.week, Number(r.answers)]));
-  if (!rows.length) return [];
-  const first = new Date(rows[0].week + "T00:00:00Z").getTime();
-  const now = new Date();
-  const monday =
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) -
-    ((now.getUTCDay() + 6) % 7) * DAY;
-  const out: { week: string; answers: number }[] = [];
-  for (let t = first; t <= monday; t += 7 * DAY) {
-    const key = new Date(t).toISOString().slice(0, 10);
-    out.push({ week: key, answers: by.get(key) ?? 0 });
-  }
-  return out.slice(-16);
-}
-
-function WeeklyChart({ weeks }: { weeks: { week: string; answers: number }[] }) {
-  const max = Math.max(1, ...weeks.map((w) => w.answers));
-  const W = 640;
-  const H = 160;
-  const pad = 22;
-  const slot = (W - pad * 2) / weeks.length;
-  const label = (iso: string) =>
-    new Date(iso + "T00:00:00Z").toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
+// banks with at least two submitted attempts, each attempt oldest first
+function groupAttempts(rows: AttemptRow[]) {
+  const by = new Map<
+    string,
+    {
+      slug: string;
+      title: string;
+      attempts: { id: string; submitted_at: string; correct: number; total: number; pct: number }[];
+    }
+  >();
+  for (const r of rows) {
+    const total = r.score_total ?? 0;
+    if (!total) continue;
+    const correct = r.score_correct ?? 0;
+    const b = by.get(r.qbanks.slug) ?? { slug: r.qbanks.slug, title: r.qbanks.title, attempts: [] };
+    b.attempts.push({
+      id: r.id,
+      submitted_at: r.submitted_at,
+      correct,
+      total,
+      pct: Math.round((1000 * correct) / total) / 10,
     });
-  return (
-    <svg viewBox={`0 0 ${W} ${H + 24}`} className="w-full" role="img" aria-label="Questions answered per week">
-      {weeks.map((w, i) => {
-        const h = (w.answers / max) * (H - 24);
-        const x = pad + i * slot + slot * 0.15;
-        return (
-          <g key={w.week}>
-            <rect
-              x={x}
-              y={H - h}
-              width={slot * 0.7}
-              height={h}
-              rx={2}
-              className="fill-indigo-500"
-            />
-            {w.answers > 0 && (
-              <text
-                x={x + slot * 0.35}
-                y={H - h - 4}
-                textAnchor="middle"
-                className="fill-gray-500 text-[10px]"
-              >
-                {w.answers}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      <line x1={pad} x2={W - pad} y1={H} y2={H} className="stroke-gray-300 dark:stroke-gray-700" />
-      <text x={pad} y={H + 16} className="fill-gray-500 text-[10px]">
-        {label(weeks[0].week)}
-      </text>
-      <text x={W - pad} y={H + 16} textAnchor="end" className="fill-gray-500 text-[10px]">
-        {label(weeks[weeks.length - 1].week)}
-      </text>
-    </svg>
-  );
+    by.set(r.qbanks.slug, b);
+  }
+  return [...by.values()]
+    .filter((b) => b.attempts.length >= 2)
+    .sort((a, b) =>
+      b.attempts[b.attempts.length - 1].submitted_at.localeCompare(a.attempts[a.attempts.length - 1].submitted_at)
+    );
 }
 
 type Row = {
@@ -168,16 +135,10 @@ export default async function Performance({
 }: {
   searchParams: Promise<{ view?: string; mode?: string }>;
 }) {
-  const { view: v, mode } = await searchParams;
-  const view: View = v === "case" || v === "bank" || v === "progress" ? v : "objective";
-  const latest = mode === "latest";
-  const href = (key: View, wantLatest: boolean) => {
-    const qs = new URLSearchParams();
-    if (key !== "objective") qs.set("view", key);
-    if (wantLatest && key !== "progress") qs.set("mode", "latest");
-    const str = qs.toString();
-    return str ? `/performance?${str}` : "/performance";
-  };
+  const { view: v } = await searchParams;
+  const view: View = v === "bank" || v === "progress" ? v : "case";
+  const latest = true; // performance always shows mastery: the newest answer to each question
+  const href = (key: View) => (key === "case" ? "/performance" : `/performance?view=${key}`);
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -203,19 +164,16 @@ export default async function Performance({
   const { data: banks } =
     view === "bank" ? await supabase.from("v_perf_bank").select("*") : { data: null };
 
-  const { data: totals } =
+  // submitted attempts per bank, for the Progress tab (deleted attempts no longer exist)
+  const { data: attemptRows } =
     view === "progress"
-      ? await supabase.from("v_my_totals").select("*").maybeSingle()
+      ? await supabase
+          .from("attempts")
+          .select("id, submitted_at, score_correct, score_total, qbanks!inner(slug, title)")
+          .not("submitted_at", "is", null)
+          .order("submitted_at", { ascending: true })
       : { data: null };
-  const { data: weekly } =
-    view === "progress"
-      ? await supabase.from("v_my_weekly_activity").select("*")
-      : { data: null };
-  const { data: progress } =
-    view === "progress"
-      ? await supabase.from("v_my_case_progress").select("*")
-      : { data: null };
-  const weeks = fillWeeks((weekly ?? []) as Week[]);
+  const progressBanks = groupAttempts((attemptRows ?? []) as unknown as AttemptRow[]);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -238,7 +196,7 @@ export default async function Performance({
             {TABS.map((t) => (
               <Link
                 key={t.key}
-                href={href(t.key, latest)}
+                href={href(t.key)}
                 className={`rounded-full border px-4 py-1.5 text-sm ${
                   view === t.key
                     ? "border-black bg-black text-white dark:border-white dark:bg-white dark:text-black"
@@ -250,56 +208,12 @@ export default async function Performance({
             ))}
           </div>
 
-          {view !== "progress" && (
-            <>
-              <div className="mt-4 flex flex-wrap gap-2 text-sm">
-                {[
-                  { wantLatest: false, label: "All attempts" },
-                  { wantLatest: true, label: "Latest attempt only" },
-                ].map((m) => (
-                  <Link
-                    key={m.label}
-                    href={href(view, m.wantLatest)}
-                    className={`rounded-full border px-3 py-1 ${
-                      latest === m.wantLatest
-                        ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
-                        : "border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-400"
-                    }`}
-                  >
-                    {m.label}
-                  </Link>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {latest
-                  ? "Counts only your most recent answer to each question."
-                  : "Counts every answer you've given across all attempts. Skipped questions aren't counted."}
-              </p>
-            </>
-          )}
+          <p className={`mt-4 text-xs text-gray-500 dark:text-gray-400 ${view === "progress" ? "hidden" : ""}`}>
+            Scores reflect your most recent answer to each question, so they show your current mastery.
+            Skipped questions are not counted.
+          </p>
 
           <div className="mt-6 space-y-2">
-            {view === "objective" &&
-              weakestFirst(rows ?? [], latest, (r) => r.topic ?? "").map((r) => (
-                <div
-                  key={r.topic ?? "none"}
-                  className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
-                >
-                  <div className="flex items-baseline justify-between gap-4">
-                    <div>
-                      <span className="text-sm font-medium">{r.topic ?? "Uncategorized"}</span>
-                      {r.description && (
-                        <p className="mt-1 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-                          {r.description}
-                        </p>
-                      )}
-                    </div>
-                    <Score r={pick(r, latest)} />
-                  </div>
-                  <Bar pct={toPct(pick(r, latest))} />
-                </div>
-              ))}
-
             {view === "case" &&
               (cases?.length ? (
                 cases.map((c) => (
@@ -419,109 +333,68 @@ export default async function Performance({
                 </p>
               ))}
 
-            {view === "progress" && (
-              <div className="space-y-8">
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { label: "Unique questions answered", value: totals?.questions ?? 0 },
-                    { label: "Total answers", value: totals?.answers ?? 0 },
-                    {
-                      label: "Answered this week",
-                      value: weeks.length ? weeks[weeks.length - 1].answers : 0,
-                    },
-                  ].map((c) => (
-                    <div
-                      key={c.label}
-                      className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
-                    >
-                      <p className="text-2xl font-semibold tabular-nums">{c.value}</p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{c.label}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {weeks.length > 0 && (
-                  <div>
-                    <h2 className="text-sm font-medium">Questions answered per week</h2>
-                    <div className="mt-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-                      <WeeklyChart weeks={weeks} />
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <h2 className="text-sm font-medium">Improvement by case</h2>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    Your first answer to each question compared with your most recent one.
+            {view === "progress" &&
+              (progressBanks.length ? (
+                <>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Each question bank you have completed more than once, attempt by attempt.
+                    Deleted attempts are not counted.
                   </p>
-                  <div className="mt-3 space-y-2">
-                    {progress?.length ? (
-                      progress.map((c) => {
-                        const first = Number(c.first_pct ?? 0);
-                        const latest = Number(c.latest_pct ?? 0);
-                        const delta = Math.round((latest - first) * 10) / 10;
-                        return (
-                          <div
-                            key={c.case_number}
-                            className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
-                          >
-                            <div className="flex items-baseline justify-between gap-4">
-                              <div>
-                                <span className="text-sm font-medium">
-                                  Case {c.case_number}
-                                  {c.title && (
-                                    <span className="font-normal text-gray-500 dark:text-gray-400">
-                                      {" "}
-                                      · {c.title}
-                                    </span>
-                                  )}
+                  {progressBanks.map((b) => {
+                    const first = b.attempts[0].pct;
+                    const last = b.attempts[b.attempts.length - 1].pct;
+                    const delta = Math.round((last - first) * 10) / 10;
+                    return (
+                      <div
+                        key={b.slug}
+                        className="rounded-lg border border-gray-200 p-4 dark:border-gray-800"
+                      >
+                        <div className="flex items-baseline justify-between gap-4">
+                          <Link href={`/qbank/${b.slug}`} className="text-sm font-medium hover:underline">
+                            {b.title}
+                          </Link>
+                          <span className="shrink-0 text-sm tabular-nums">
+                            {first}% → {last}%{" "}
+                            <span
+                              className={
+                                delta > 0 ? "text-green-600" : delta < 0 ? "text-red-500" : "text-gray-500"
+                              }
+                            >
+                              ({delta > 0 ? "+" : ""}
+                              {delta})
+                            </span>
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {b.attempts.map((a, i) => (
+                            <div key={a.id}>
+                              <div className="flex items-baseline justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
+                                <span>
+                                  Attempt {i + 1} ·{" "}
+                                  {new Date(a.submitted_at).toLocaleDateString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  })}
                                 </span>
-                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                  {c.questions} questions · {c.retaken} retaken
-                                </p>
-                              </div>
-                              <span className="shrink-0 text-sm tabular-nums">
-                                {first}% → {latest}%{" "}
-                                <span
-                                  className={
-                                    delta > 0
-                                      ? "text-green-600"
-                                      : delta < 0
-                                      ? "text-red-500"
-                                      : "text-gray-500"
-                                  }
-                                >
-                                  ({delta > 0 ? "+" : ""}
-                                  {delta})
+                                <span className="tabular-nums">
+                                  {a.correct}/{a.total} · {a.pct}%
                                 </span>
-                              </span>
-                            </div>
-                            <div className="mt-3 space-y-1.5">
-                              <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
-                                <div
-                                  className="h-1.5 rounded bg-gray-400"
-                                  style={{ width: `${first}%` }}
-                                />
                               </div>
-                              <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
-                                <div
-                                  className="h-1.5 rounded bg-indigo-500"
-                                  style={{ width: `${latest}%` }}
-                                />
-                              </div>
+                              <Bar pct={a.pct} />
                             </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        No answered questions are linked to a case yet.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Progress data will appear here for question banks that have been attempted and
+                  submitted at least twice. Deleted attempts are not counted toward progress.
+                </p>
+              ))}
 
             {view === "bank" &&
               banks?.map((b) => (

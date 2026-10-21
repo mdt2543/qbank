@@ -115,6 +115,15 @@ function sumMetrics(rows: Metric[]): Metric {
   };
 }
 
+function ClassAverage({ pct }: { pct?: number }) {
+  if (pct === undefined) return null;
+  return (
+    <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+      Class average {pct}%
+    </p>
+  );
+}
+
 function Bar({ pct }: { pct: number }) {
   return (
     <div className="mt-2 h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
@@ -172,6 +181,15 @@ export default async function Performance({
       : { data: null };
   const { data: banks } =
     view === "bank" ? await supabase.from("v_perf_bank").select("*") : { data: null };
+  // class average per bank (only banks with at least 2 qualifying students come back)
+  const { data: avgRows } =
+    view === "bank" ? await supabase.rpc("class_averages") : { data: null };
+  const classAvg = new Map(
+    ((avgRows ?? []) as { slug: string; avg_pct: number | string }[]).map((r) => [
+      r.slug,
+      Number(r.avg_pct),
+    ])
+  );
   // cases and sessions inside each bank; if this view isn't installed yet, banks show plain
   const { data: bankObjRows } =
     view === "bank"
@@ -437,6 +455,7 @@ export default async function Performance({
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {b.questions} of {b.total} questions attempted
                           </p>
+                          <ClassAverage pct={classAvg.get(b.slug)} />
                         </div>
                         <Score r={pick(b, latest)} />
                       </div>
@@ -463,6 +482,7 @@ export default async function Performance({
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {b.questions} of {b.total} questions attempted
                           </p>
+                          <ClassAverage pct={classAvg.get(b.slug)} />
                         </div>
                         <Score r={pick(b, latest)} />
                       </div>

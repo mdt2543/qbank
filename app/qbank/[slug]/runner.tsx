@@ -155,6 +155,7 @@ export default function Runner({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reviewPage, setReviewPage] = useState(0);
   const [finishedAt, setFinishedAt] = useState<Date | null>(null);
+  const [classAvg, setClassAvg] = useState<number | null>(null);
   const reviewScroll = useRef<HTMLDivElement>(null);
   const [topics, setTopics] = useState<Record<string, { name: string; description: string | null }>>({});
   const timer = useRef<number>(Date.now());
@@ -470,6 +471,14 @@ export default function Runner({
     setReviewFrom("results");
     setFinishedAt(new Date());
     setScore({ correct: data.correct, total: data.total });
+    // class average for this bank (the database returns it only once 2+ students qualify)
+    setClassAvg(null);
+    supabase.rpc("class_averages").then(({ data: rows }) => {
+      const row = (rows as { slug: string; avg_pct: number | string }[] | null)?.find(
+        (x) => x.slug === slug
+      );
+      if (row) setClassAvg(Number(row.avg_pct));
+    });
     setPhase("done");
   }
 
@@ -818,6 +827,11 @@ export default function Runner({
         <p className="mt-1 text-gray-600 dark:text-gray-400">
           {score.correct} of {score.total} correct
         </p>
+        {classAvg && (
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Class average on this bank: {classAvg}%
+          </p>
+        )}
         <div className="mt-8 flex flex-wrap gap-3">
           <button
             onClick={() => {

@@ -586,7 +586,7 @@ export default function Runner({
         jump(index + 1);
       } else if (e.key === "ArrowLeft") {
         jump(index - 1);
-      } else if (e.key.toLowerCase() === "f") {
+      } else if (e.key.toLowerCase() === "f" && mode !== "tutor") {
         toggleFlag();
       }
     }
@@ -938,7 +938,7 @@ export default function Runner({
             const tone = omitted
               ? { strip: "bg-neutral-600", panel: "bg-neutral-800/70", label: "OMITTED", text: "text-gray-300" }
               : ok
-              ? { strip: "bg-indigo-600", panel: "bg-indigo-950/60", label: "CORRECT", text: "text-indigo-300" }
+              ? { strip: "bg-green-600", panel: "bg-green-950/60", label: "CORRECT", text: "text-green-300" }
               : { strip: "bg-red-600", panel: "bg-red-950/60", label: "INCORRECT", text: "text-red-300" };
             const topic = qq.topic_id ? topics[qq.topic_id] : undefined;
             const src = qq.image_path
@@ -949,7 +949,9 @@ export default function Runner({
               <section key={qq.id} className="border-b border-neutral-800 px-6 py-6">
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-400">
                   #{from + i + 1}
-                  {flags[qq.id] && <Bookmark size={14} className="fill-amber-400 text-amber-400" />}
+                  {mode !== "tutor" && flags[qq.id] && (
+                    <Bookmark size={14} className="fill-amber-400 text-amber-400" />
+                  )}
                 </h3>
 
                 <div className="mt-3 space-y-3 leading-relaxed">
@@ -1111,7 +1113,7 @@ export default function Runner({
         }`}
       >
         {i + 1}
-        {flags[qq.id] && (
+        {exam && flags[qq.id] && (
           <Bookmark size={13} className="absolute -bottom-1 -right-1 fill-red-500 text-red-500" />
         )}
       </button>
@@ -1137,7 +1139,7 @@ export default function Runner({
         {chip("unanswered", <span className="h-3.5 w-3.5 rounded-full border border-neutral-500" />, nLeft)}
         {chip("answered", <span className="h-3.5 w-3.5 rounded-full bg-violet-600" />, nAnswered)}
         <span className="flex-1" />
-        {chip("flagged", <Bookmark size={14} className="fill-red-500 text-red-500" />, nFlagged)}
+        {exam && chip("flagged", <Bookmark size={14} className="fill-red-500 text-red-500" />, nFlagged)}
       </div>
     );
   };
@@ -1261,14 +1263,18 @@ export default function Runner({
               >
                 <NotebookPen size={18} />
               </button>
-              <span className="mx-2 h-5 w-px bg-neutral-700" />
-              <button
-                onClick={toggleFlag}
-                className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
-              >
-                <Bookmark size={18} className={flags[q.id] ? "fill-red-500 text-red-500" : ""} />
-                Mark for Review
-              </button>
+              {exam && (
+                <>
+                  <span className="mx-2 h-5 w-px bg-neutral-700" />
+                  <button
+                    onClick={toggleFlag}
+                    className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
+                  >
+                    <Bookmark size={18} className={flags[q.id] ? "fill-red-500 text-red-500" : ""} />
+                    Mark for Review
+                  </button>
+                </>
+              )}
             </div>
           </div>
 

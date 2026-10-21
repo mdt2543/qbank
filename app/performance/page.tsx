@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import ClassAverage from "@/components/class-average";
 
 type View = "case" | "bank" | "progress";
 
@@ -115,15 +116,6 @@ function sumMetrics(rows: Metric[]): Metric {
   };
 }
 
-function ClassAverage({ pct }: { pct?: number }) {
-  if (pct === undefined) return null;
-  return (
-    <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-      Class average {pct}%
-    </p>
-  );
-}
-
 function Bar({ pct }: { pct: number }) {
   return (
     <div className="mt-2 h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
@@ -185,9 +177,10 @@ export default async function Performance({
   const { data: avgRows } =
     view === "bank" ? await supabase.rpc("class_averages") : { data: null };
   const classAvg = new Map(
-    ((avgRows ?? []) as { slug: string; avg_pct: number | string }[]).map((r) => [
+    // avg_pct is null when the student hasn't turned on jump scare mode (shown as "hidden")
+    ((avgRows ?? []) as { slug: string; avg_pct: number | string | null }[]).map((r) => [
       r.slug,
-      Number(r.avg_pct),
+      r.avg_pct === null ? null : Number(r.avg_pct),
     ])
   );
   // cases and sessions inside each bank; if this view isn't installed yet, banks show plain
@@ -455,7 +448,12 @@ export default async function Performance({
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {b.questions} of {b.total} questions attempted
                           </p>
-                          <ClassAverage pct={classAvg.get(b.slug)} />
+                          {classAvg.has(b.slug) && (
+                            <ClassAverage
+                              pct={classAvg.get(b.slug) ?? null}
+                              className="mt-0.5 text-sm text-gray-500 dark:text-gray-400"
+                            />
+                          )}
                         </div>
                         <Score r={pick(b, latest)} />
                       </div>
@@ -482,7 +480,12 @@ export default async function Performance({
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             {b.questions} of {b.total} questions attempted
                           </p>
-                          <ClassAverage pct={classAvg.get(b.slug)} />
+                          {classAvg.has(b.slug) && (
+                            <ClassAverage
+                              pct={classAvg.get(b.slug) ?? null}
+                              className="mt-0.5 text-sm text-gray-500 dark:text-gray-400"
+                            />
+                          )}
                         </div>
                         <Score r={pick(b, latest)} />
                       </div>

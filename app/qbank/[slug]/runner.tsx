@@ -20,6 +20,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import ClassAverage from "@/components/class-average";
 import HighlightedText, { type Range, type Tool } from "./highlight";
 import FeedbackForm from "./feedback-form";
 import SessionCalculator from "@/components/session-calculator";
@@ -155,7 +156,8 @@ export default function Runner({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reviewPage, setReviewPage] = useState(0);
   const [finishedAt, setFinishedAt] = useState<Date | null>(null);
-  const [classAvg, setClassAvg] = useState<number | null>(null);
+  const [classAvg, setClassAvg] = useState<{ pct: number | null } | null>(null);
+  const [jumpscaresOn, setJumpscaresOn] = useState(jumpscares);
   const reviewScroll = useRef<HTMLDivElement>(null);
   const [topics, setTopics] = useState<Record<string, { name: string; description: string | null }>>({});
   const timer = useRef<number>(Date.now());
@@ -471,15 +473,20 @@ export default function Runner({
     setReviewFrom("results");
     setFinishedAt(new Date());
     setScore({ correct: data.correct, total: data.total });
-    // class average for this bank (the database returns it only once 2+ students qualify)
+    loadClassAvg();
+    setPhase("done");
+  }
+
+  // class average for this bank: a row only comes back once 2+ students qualify, and its
+  // number is null unless this student has jump scare mode on (shown as "hidden")
+  function loadClassAvg() {
     setClassAvg(null);
     supabase.rpc("class_averages").then(({ data: rows }) => {
-      const row = (rows as { slug: string; avg_pct: number | string }[] | null)?.find(
+      const row = (rows as { slug: string; avg_pct: number | string | null }[] | null)?.find(
         (x) => x.slug === slug
       );
-      if (row) setClassAvg(Number(row.avg_pct));
+      if (row) setClassAvg({ pct: row.avg_pct === null ? null : Number(row.avg_pct) });
     });
-    setPhase("done");
   }
 
   useEffect(() => {
@@ -501,7 +508,7 @@ export default function Runner({
   // Opt-in tutor-mode jump scare: a 1-in-10,000 chance each second the question
   // screen is visible. Skipped entirely when the device asks for reduced motion.
   useEffect(() => {
-    if (!jumpscares || phase !== "active" || mode !== "tutor" || reviewing) return;
+    if (!jumpscaresOn || phase !== "active" || mode !== "tutor" || reviewing) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const audio = new Audio("/jumpscare.mp3");
@@ -526,7 +533,7 @@ export default function Runner({
       audio.pause();
       setScare(false);
     };
-  }, [jumpscares, phase, mode, reviewing]);
+  }, [jumpscaresOn, phase, mode, reviewing]);
 
   useEffect(() => {
     if (phase !== "active" || mode !== "timed") return;
@@ -828,9 +835,15 @@ export default function Runner({
           {score.correct} of {score.total} correct
         </p>
         {classAvg && (
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Class average on this bank: {classAvg}%
-          </p>
+          <ClassAverage
+            pct={classAvg.pct}
+            prefix="Class average on this bank:"
+            className="mt-1 text-sm text-gray-500 dark:text-gray-400"
+            onEnabled={() => {
+              setJumpscaresOn(true);
+              loadClassAvg();
+            }}
+          />
         )}
         <div className="mt-8 flex flex-wrap gap-3">
           <button

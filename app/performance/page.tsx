@@ -122,6 +122,31 @@ function weakestFirst<T extends Metric>(rows: T[], latest: boolean, name: (r: T)
   });
 }
 
+// "Case 9 - Pharmacokinetics Practice Questions" -> "Pharmacokinetics"
+function sectionName(title: string) {
+  return title
+    .replace(/^\s*case\s*\d+\s*[-–—:]\s*/i, "")
+    .replace(/\s+practice questions\s*$/i, "")
+    .trim();
+}
+
+function sumMetrics(rows: Metric[]): Metric {
+  const n = (f: (r: Metric) => number | string) => rows.reduce((s, r) => s + Number(f(r)), 0);
+  const answered = n((r) => r.answered);
+  const correct = n((r) => r.correct);
+  const latestAnswered = n((r) => r.latest_answered);
+  const latestCorrect = n((r) => r.latest_correct);
+  const p = (c: number, a: number) => (a ? Math.round((1000 * c) / a) / 10 : null);
+  return {
+    answered,
+    correct,
+    pct: p(correct, answered),
+    latest_answered: latestAnswered,
+    latest_correct: latestCorrect,
+    latest_pct: p(latestCorrect, latestAnswered),
+  };
+}
+
 function Bar({ pct }: { pct: number }) {
   return (
     <div className="mt-2 h-1.5 w-full rounded bg-gray-200 dark:bg-gray-800">
@@ -177,6 +202,11 @@ export default async function Performance({
   const { data: caseObjs } =
     view === "case"
       ? await supabase.from("v_perf_case_objective").select("*")
+      : { data: null };
+  // sections inside each case; if this view isn't installed yet, the plain list is shown
+  const { data: caseBankObjs } =
+    view === "case"
+      ? await supabase.from("v_perf_case_bank_objective").select("*")
       : { data: null };
   const { data: banks } =
     view === "bank" ? await supabase.from("v_perf_bank").select("*") : { data: null };
@@ -304,11 +334,72 @@ export default async function Performance({
                       <Bar pct={toPct(pick(c, latest))} />
                     </summary>
                     <div className="space-y-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-                      {weakestFirst(
-                        (caseObjs ?? []).filter((o) => o.case_number === c.case_number),
-                        latest,
-                        (o) => o.topic
-                      ).map((o) => (
+                      {caseBankObjs ? (
+                        (() => {
+                          type CaseBankObj = Metric & {
+                            case_number: number;
+                            slug: string;
+                            bank: string;
+                            bank_created_at: string;
+                            topic: string;
+                            description: string | null;
+                          };
+                          const mine = (caseBankObjs as CaseBankObj[]).filter((o) => o.case_number === c.case_number);
+                          const sections = new Map<string, { title: string; created: string; objs: CaseBankObj[] }>();
+                          for (const o of mine) {
+                            const s = sections.get(o.slug) ?? { title: o.bank, created: o.bank_created_at, objs: [] };
+                            s.objs.push(o);
+                            sections.set(o.slug, s);
+                          }
+                          return [...sections.entries()]
+                            .sort((a, b) => a[1].created.localeCompare(b[1].created))
+                            .map(([slug, s]) => {
+                              const total = sumMetrics(s.objs);
+                              return (
+                                <details
+                                  key={slug}
+                                  className="group/sec rounded-lg border border-gray-200 dark:border-gray-800"
+                                >
+                                  <summary className="cursor-pointer list-none p-3">
+                                    <div className="flex items-baseline justify-between gap-4">
+                                      <span className="text-sm font-medium">
+                                        <span className="mr-2 inline-block text-gray-400 transition-transform group-open/sec:rotate-90">
+                                          ▸
+                                        </span>
+                                        {sectionName(s.title)}
+                                      </span>
+                                      <Score r={pick(total, latest)} />
+                                    </div>
+                                    <Bar pct={toPct(pick(total, latest))} />
+                                  </summary>
+                                  <div className="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
+                                    {weakestFirst(s.objs, latest, (o) => o.topic).map((o) => (
+                                      <div key={o.topic}>
+                                        <div className="flex items-baseline justify-between gap-4">
+                                          <div>
+                                            <span className="text-sm font-medium">{o.topic}</span>
+                                            {o.description && (
+                                              <p className="mt-0.5 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                                                {o.description}
+                                              </p>
+                                            )}
+                                          </div>
+                                          <Score r={pick(o, latest)} />
+                                        </div>
+                                        <Bar pct={toPct(pick(o, latest))} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              );
+                            });
+                        })()
+                      ) : (
+                        weakestFirst(
+                          (caseObjs ?? []).filter((o) => o.case_number === c.case_number),
+                          latest,
+                          (o) => o.topic
+                        ).map((o) => (
                           <div key={o.topic}>
                             <div className="flex items-baseline justify-between gap-4">
                               <div>
@@ -323,7 +414,8 @@ export default async function Performance({
                             </div>
                             <Bar pct={toPct(pick(o, latest))} />
                           </div>
-                        ))}
+                        ))
+                      )}
                     </div>
                   </details>
                 ))

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useTheme } from "next-themes";
 import Avatar from "@/components/avatar";
-import { COLOR_THEMES, type ColorTheme } from "@/lib/color-themes";
+import { brandVars, COLOR_THEMES, customValue, parseCustom, SHADES, startingPoint } from "@/lib/color-themes";
 
 // Crop to a centered square and shrink, so uploads stay small whatever the original.
 async function toSquareJpeg(file: File, size = 256): Promise<Blob> {
@@ -41,7 +41,7 @@ export default function ProfileForm({
   initialPath: string | null;
   initialUrl: string | null;
   initialJumpscares: boolean;
-  initialColor: ColorTheme;
+  initialColor: string;
   initialAppearance: "light" | "dark" | null;
 }) {
   const supabase = createClient();
@@ -54,7 +54,7 @@ export default function ProfileForm({
   const [jumpscares, setJumpscares] = useState(initialJumpscares);
   const [savedJumpscares, setSavedJumpscares] = useState(initialJumpscares);
   const { setTheme } = useTheme();
-  const [color, setColor] = useState<ColorTheme>(initialColor);
+  const [color, setColor] = useState<string>(initialColor);
   const [mode, setMode] = useState<"system" | "light" | "dark">(initialAppearance ?? "system");
   const [saved, setSaved] = useState({ color: initialColor, mode: initialAppearance ?? "system" });
   const [busy, setBusy] = useState(false);
@@ -78,10 +78,22 @@ export default function ProfileForm({
   }
 
   // choices show straight away; they are saved with the Save button
-  function chooseColor(c: ColorTheme) {
+  function chooseColor(c: string) {
     setColor(c);
-    document.documentElement.dataset.theme = c;
+    const root = document.documentElement;
+    const custom = parseCustom(c);
+    if (!custom) {
+      // a preset: its shades come from the stylesheet
+      root.dataset.theme = c;
+      for (const sh of SHADES) root.style.removeProperty(`--brand-${sh}`);
+    } else {
+      root.dataset.theme = "custom";
+      for (const [k, v] of Object.entries(brandVars(custom.hue, custom.bright))) root.style.setProperty(k, v);
+    }
   }
+  // where the two sliders sit: the picked color, or the starting point of the chosen preset
+  const point = startingPoint(color);
+  const moreStartsOpen = !COLOR_THEMES.some((t) => t.key === initialColor);
   function chooseMode(m: "system" | "light" | "dark") {
     setMode(m);
     setTheme(m);
@@ -195,7 +207,7 @@ export default function ProfileForm({
 
       <div>
         <p className="text-sm font-medium">Color theme</p>
-        <div className="mt-2 flex flex-wrap gap-3">
+        <div className="mt-3 flex flex-wrap gap-3">
           {COLOR_THEMES.map((t) => (
             <button
               key={t.key}
@@ -211,6 +223,55 @@ export default function ProfileForm({
             />
           ))}
         </div>
+
+        <details open={moreStartsOpen} className="group mt-4 rounded-lg border border-gray-200 dark:border-gray-800">
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium">
+            <span className="mr-2 inline-block text-gray-400 transition-transform group-open:rotate-90">▸</span>
+            More colors
+          </summary>
+          <div className="space-y-4 border-t border-gray-200 px-3 py-4 dark:border-gray-800">
+            <div>
+              <label htmlFor="hue" className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                Color
+              </label>
+              <input
+                id="hue"
+                type="range"
+                min={0}
+                max={359}
+                value={point.hue}
+                onChange={(e) => chooseColor(customValue(Number(e.target.value), point.bright))}
+                className="hue-slider mt-2 w-full cursor-pointer"
+                style={{
+                  background:
+                    "linear-gradient(to right, hsl(0 85% 45%), hsl(60 85% 45%), hsl(120 85% 38%), hsl(180 85% 38%), hsl(240 85% 52%), hsl(300 85% 45%), hsl(359 85% 45%))",
+                }}
+              />
+            </div>
+            <div>
+              <label htmlFor="bright" className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                Brightness
+              </label>
+              <input
+                id="bright"
+                type="range"
+                min={0}
+                max={100}
+                value={point.bright}
+                onChange={(e) => chooseColor(customValue(point.hue, Number(e.target.value)))}
+                className="hue-slider mt-2 w-full cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, hsl(${point.hue} 95% 18%), hsl(${point.hue} 90% 45%))`,
+                }}
+              />
+            </div>
+            <div className="flex h-6 overflow-hidden rounded">
+              {SHADES.map((sh) => (
+                <div key={sh} className="flex-1" style={{ backgroundColor: `rgb(var(--brand-${sh}))` }} />
+              ))}
+            </div>
+          </div>
+        </details>
         <p className="mt-3 text-sm font-medium">Appearance</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {(

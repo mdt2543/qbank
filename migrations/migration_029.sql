@@ -1,0 +1,32 @@
+-- Color spectrum with a brightness control. Stored in student_profiles.color_theme as a preset
+-- name, or 'h<hue>' / 'h<hue>b<brightness>' (hue 0-359, brightness 1-100). 'orange' stays valid
+-- for students who already saved it. Additive: replaces save_appearance() only (supersedes
+-- migration_028.sql; it does not matter whether that one was run). Run BEFORE deploying the
+-- matching app update.
+
+create or replace function public.save_appearance(p_color text, p_mode text)
+ returns void
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare
+  v_user uuid := auth.uid();
+begin
+  if v_user is null then raise exception 'Not authenticated'; end if;
+  if p_color is not null
+     and p_color not in ('burgundy', 'purple', 'blue', 'green', 'teal', 'orange')
+     and p_color !~ '^h([0-9]|[1-9][0-9]|[12][0-9][0-9]|3[0-5][0-9])(b([1-9]|[1-9][0-9]|100))?$' then
+    raise exception 'Unknown color theme';
+  end if;
+  if p_mode is not null and p_mode not in ('light', 'dark') then
+    raise exception 'Unknown appearance';
+  end if;
+
+  insert into student_profiles (user_id, color_theme, appearance, updated_at)
+  values (v_user, p_color, p_mode, now())
+  on conflict (user_id) do update
+    set color_theme = p_color,
+        appearance  = p_mode,
+        updated_at  = now();
+end $function$;

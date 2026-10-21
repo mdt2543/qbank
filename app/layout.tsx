@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import SiteHeader from "@/components/site-header";
 import TutorialGate from "@/components/tutorial-gate";
 import ThemeSync from "@/components/theme-sync";
-import { asAppearance, asColorTheme, DEFAULT_COLOR_THEME } from "@/lib/color-themes";
+import { asAppearance, asColorValue, brandVars, DEFAULT_COLOR_THEME, parseCustom } from "@/lib/color-themes";
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
@@ -57,7 +57,7 @@ export default async function RootLayout({
       .select("color_theme, appearance")
       .eq("user_id", user.id)
       .maybeSingle();
-    colorTheme = asColorTheme(look?.color_theme);
+    colorTheme = asColorValue(look?.color_theme);
     appearance = asAppearance(look?.appearance);
     if (prof?.avatar_path) {
       const { data: signed } = await supabase.storage
@@ -66,8 +66,14 @@ export default async function RootLayout({
       avatarUrl = signed?.signedUrl ?? null;
     }
   }
+  const custom = parseCustom(colorTheme);
   return (
-    <html lang="en" data-theme={colorTheme} suppressHydrationWarning>
+    <html
+      lang="en"
+      data-theme={custom ? "custom" : colorTheme}
+      style={custom ? (brandVars(custom.hue, custom.bright) as React.CSSProperties) : undefined}
+      suppressHydrationWarning
+    >
       <body className={`${geistSans.className} antialiased`}>
         <ThemeProvider
           attribute="class"

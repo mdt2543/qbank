@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ProfileForm from "./profile-form";
-import { asAppearance, asColorTheme } from "@/lib/color-themes";
+import { asAppearance, asColorValue } from "@/lib/color-themes";
 
 export default async function Profile() {
   const supabase = await createClient();
@@ -52,7 +52,7 @@ export default async function Profile() {
         initialPath={prof?.avatar_path ?? null}
         initialUrl={avatarUrl}
         initialJumpscares={js?.jumpscares ?? false}
-        initialColor={asColorTheme(look?.color_theme)}
+        initialColor={asColorValue(look?.color_theme)}
         initialAppearance={asAppearance(look?.appearance)}
       />
     </main>

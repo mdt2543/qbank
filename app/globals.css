@@ -184,3 +184,33 @@
   color: #d4d4d8;
   pointer-events: none;
 }
+
+/* profile color spectrum slider: the rainbow is the track, the knob is a white ring */
+.hue-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.75rem;
+  border-radius: 9999px;
+  outline: none;
+}
+.hue-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1.5rem;
+  width: 1.5rem;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid #444;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.hue-slider::-moz-range-thumb {
+  height: 1.5rem;
+  width: 1.5rem;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid #444;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.hue-slider:focus-visible::-webkit-slider-thumb {
+  border-color: rgb(var(--brand-600));
+}

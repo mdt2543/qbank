@@ -429,6 +429,9 @@ def main():
     ap.add_argument("--case", type=int, choices=range(1, 15), metavar="1-14",
                     help="put the bank in the Case Review subfolder 'Case N' "
                          "(needs migration_017.sql; implies --folder case-review)")
+    ap.add_argument("--exam", type=int, choices=range(1, 7), metavar="1-6",
+                    help="put the bank in the Exam Prep subfolder 'Exam N' "
+                         "(needs migration_024.sql; implies --folder exam-prep)")
     ap.add_argument("--captions-only", action="store_true",
                     help="write only SQL that fixes picture captions on a bank already "
                          "uploaded (touches no options or student answers)")
@@ -441,9 +444,15 @@ def main():
 
     if args.case and args.folder not in (None, "case-review"):
         sys.exit("--case only applies to the case-review folder.")
+    if args.exam and args.case:
+        sys.exit("Use --case or --exam, not both.")
+    if args.exam and args.folder not in (None, "exam-prep"):
+        sys.exit("--exam only applies to the exam-prep folder.")
     if args.case:
         args.folder = "case-review"
-    subfolder = f"case-{args.case}" if args.case else None
+    if args.exam:
+        args.folder = "exam-prep"
+    subfolder = f"case-{args.case}" if args.case else f"exam-{args.exam}" if args.exam else None
 
     src = pathlib.Path(args.input)
     if not src.exists():

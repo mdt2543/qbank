@@ -71,17 +71,20 @@ def main():
         title = f.stem
         m = re.match(r"\s*Case\s*(\d{1,2})\b", title, re.I)
         case = int(m.group(1)) if m and 1 <= int(m.group(1)) <= 14 else None
-        plan.append((f, title, qi.slugify(title), case))
+        m = re.match(r"\s*Exam\s*(\d)\b", title, re.I)
+        exam = int(m.group(1)) if m and 1 <= int(m.group(1)) <= 6 else None
+        plan.append((f, title, qi.slugify(title), case, exam))
 
     seen = {}
-    for f, title, slug, case in plan:
+    for f, title, slug, case, exam in plan:
         if slug in seen:
             sys.exit(f"Two documents would become the same bank ('{slug}'):\n  {seen[slug]}\n  {f}")
         seen[slug] = f
 
     print(f"{len(plan)} documents:\n")
-    for f, title, slug, case in plan:
-        where = f"Case Review > Case {case}" if case else (args.folder or "unfiled")
+    for f, title, slug, case, exam in plan:
+        where = (f"Case Review > Case {case}" if case
+                 else f"Exam Prep > Exam {exam}" if exam else (args.folder or "unfiled"))
         print(f"  {title}\n      -> {where}")
     if args.dry_run:
         return
@@ -97,7 +100,7 @@ def main():
     (out / "sql").mkdir()
 
     done, failed = [], []
-    for i, (f, title, slug, case) in enumerate(plan, 1):
+    for i, (f, title, slug, case, exam) in enumerate(plan, 1):
         # short work folders: Windows rejects paths past ~260 characters
         work = out / "w" / str(i)
         cmd = [sys.executable, str(HERE / "qbank_import.py"), str(f), "--bank", title,
@@ -108,6 +111,8 @@ def main():
             cmd += ["--balance", "--image-root", str(out / "images")]
         if case:
             cmd += ["--case", str(case)]
+        elif exam:
+            cmd += ["--exam", str(exam)]
         elif args.folder:
             cmd += ["--folder", args.folder]
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")

@@ -12,11 +12,17 @@ const CASE_SUBFOLDERS: Sub[] = Array.from({ length: 14 }, (_, i) => ({
   title: `Case ${i + 1}`,
 }));
 
+// Subfolders inside Exam Prep: Exam 1 ... Exam 6
+const EXAM_SUBFOLDERS: Sub[] = Array.from({ length: 6 }, (_, i) => ({
+  key: `exam-${i + 1}`,
+  title: `Exam ${i + 1}`,
+}));
+
 // Folder order on the page. A bank's folder is the key stored in qbanks.folder, and its
 // subfolder the key stored in qbanks.subfolder.
 const FOLDERS: { key: string; title: string; subfolders: Sub[] }[] = [
   { key: "case-review", title: "Case Review", subfolders: CASE_SUBFOLDERS },
-  { key: "exam-prep", title: "Exam Prep", subfolders: [] },
+  { key: "exam-prep", title: "Exam Prep", subfolders: EXAM_SUBFOLDERS },
 ];
 
 type Bank = {
@@ -187,7 +193,7 @@ export default async function Home() {
               const validSubs = new Set(f.subfolders.map((s) => s.key));
               // banks without a (valid) subfolder sit directly in the folder
               const loose = inFolder.filter((b) => !validSubs.has(subOf.get(b.slug) ?? ""));
-              // a subfolder (Case 1, Case 2 ...) only appears once it has a bank in it
+              // a subfolder (Case 1, Exam 4 ...) only appears once it has a bank in it
               const subs = f.subfolders
                 .map((s) => ({
                   ...s,

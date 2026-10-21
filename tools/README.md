@@ -14,7 +14,7 @@ Log in first with `npx supabase login` (and `npx supabase logout` when you are d
    python tools\qbank_import.py "<path to the .docx>" --bank "<title>" --balance --case 9 --outdir temp\case-9 --image-root temp\case-9\images
    ```
 
-   - `--case N` puts the bank in Case Review, subfolder "Case N". For Exam Prep use `--folder exam-prep` instead.
+   - `--case N` puts the bank in Case Review, subfolder "Case N". `--exam N` (1-6) puts it in Exam Prep, subfolder "Exam N". (`--folder exam-prep` alone files it directly in Exam Prep.) The bulk importer picks these up from document names starting "Case N" or "Exam N".
    - `--draft` imports the bank hidden, so you can look at it before students can.
    - Keep `--image-root`: long titles make long paths and Windows stops at about 260 characters.
    - Many banks at once: `python tools\bulk_import.py "<folder holding the Upload... folders>"`.

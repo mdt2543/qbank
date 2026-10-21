@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ProfileForm from "./profile-form";
+import { asAppearance, asColorTheme } from "@/lib/color-themes";
 
 export default async function Profile() {
   const supabase = await createClient();
@@ -18,6 +19,12 @@ export default async function Profile() {
   const { data: js } = await supabase
     .from("student_profiles")
     .select("jumpscares")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const { data: look } = await supabase
+    .from("student_profiles")
+    .select("color_theme, appearance")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -45,6 +52,8 @@ export default async function Profile() {
         initialPath={prof?.avatar_path ?? null}
         initialUrl={avatarUrl}
         initialJumpscares={js?.jumpscares ?? false}
+        initialColor={asColorTheme(look?.color_theme)}
+        initialAppearance={asAppearance(look?.appearance)}
       />
     </main>
   );

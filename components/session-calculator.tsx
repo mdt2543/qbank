@@ -323,7 +323,7 @@ export default function SessionCalculator({
 
     ...["1", "2", "3"].map((d) => ({ label: d, title: d, act: putAfter(d), cls: "bg-neutral-800 hover:bg-neutral-700" })),
     { label: "−", title: "Subtract", act: putAfter("-"), cls: "bg-neutral-700 hover:bg-neutral-600" },
-    { label: "=", title: "Work out the answer", act: () => calculate(), cls: "bg-indigo-600 text-white hover:bg-indigo-500 row-span-2 !h-auto" },
+    { label: "=", title: "Work out the answer", act: () => calculate(), cls: "bg-brand-600 text-white hover:bg-brand-500 row-span-2 !h-auto" },
 
     { label: "0", title: "0", act: putAfter("0"), cls: "bg-neutral-800 hover:bg-neutral-700 col-span-2" },
     { label: ".", title: "Decimal point", act: putAfter("."), cls: "bg-neutral-800 hover:bg-neutral-700" },
@@ -384,13 +384,13 @@ export default function SessionCalculator({
                   <Typeset latex={h.latex} />
                 </button>
                 {h.kind === "note" ? (
-                  <span className="shrink-0 text-sm font-semibold text-indigo-200">{h.value}</span>
+                  <span className="shrink-0 text-sm font-semibold text-brand-200">{h.value}</span>
                 ) : (
                   <button
                     onMouseDown={keep}
                     onClick={() => insertAnswer(h)}
                     title="Use this answer"
-                    className="flex shrink-0 items-center gap-1 rounded px-1 text-sm font-semibold tabular-nums text-indigo-200 hover:bg-neutral-800"
+                    className="flex shrink-0 items-center gap-1 rounded px-1 text-sm font-semibold tabular-nums text-brand-200 hover:bg-neutral-800"
                   >
                     <span>=</span>
                     {h.kind === "number" ? <span>{h.value}</span> : <Typeset latex={h.value} />}
@@ -403,7 +403,7 @@ export default function SessionCalculator({
       )}
 
       <div className="px-3 pt-3">
-        <div className="calc-field min-h-[3.25rem] rounded-md border border-neutral-700 bg-neutral-950 focus-within:border-indigo-500">
+        <div className="calc-field min-h-[3.25rem] rounded-md border border-neutral-700 bg-neutral-950 focus-within:border-brand-500">
           <div ref={inputHost} />
           {!ready && !failed && (
             <p className="px-3 py-3 text-sm text-gray-500">Loading calculator…</p>

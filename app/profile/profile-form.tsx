@@ -3,7 +3,9 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useTheme } from "next-themes";
 import Avatar from "@/components/avatar";
+import { COLOR_THEMES, type ColorTheme } from "@/lib/color-themes";
 
 // Crop to a centered square and shrink, so uploads stay small whatever the original.
 async function toSquareJpeg(file: File, size = 256): Promise<Blob> {
@@ -30,6 +32,8 @@ export default function ProfileForm({
   initialPath,
   initialUrl,
   initialJumpscares,
+  initialColor,
+  initialAppearance,
 }: {
   userId: string;
   email: string;
@@ -37,6 +41,8 @@ export default function ProfileForm({
   initialPath: string | null;
   initialUrl: string | null;
   initialJumpscares: boolean;
+  initialColor: ColorTheme;
+  initialAppearance: "light" | "dark" | null;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -47,6 +53,10 @@ export default function ProfileForm({
   const [blob, setBlob] = useState<Blob | null>(null);
   const [jumpscares, setJumpscares] = useState(initialJumpscares);
   const [savedJumpscares, setSavedJumpscares] = useState(initialJumpscares);
+  const { setTheme } = useTheme();
+  const [color, setColor] = useState<ColorTheme>(initialColor);
+  const [mode, setMode] = useState<"system" | "light" | "dark">(initialAppearance ?? "system");
+  const [saved, setSaved] = useState({ color: initialColor, mode: initialAppearance ?? "system" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -65,6 +75,16 @@ export default function ProfileForm({
     } catch (err) {
       setMsg({ ok: false, text: err instanceof Error ? err.message : "Could not read that image." });
     }
+  }
+
+  // choices show straight away; they are saved with the Save button
+  function chooseColor(c: ColorTheme) {
+    setColor(c);
+    document.documentElement.dataset.theme = c;
+  }
+  function chooseMode(m: "system" | "light" | "dark") {
+    setMode(m);
+    setTheme(m);
   }
 
   function removePhoto() {
@@ -99,6 +119,18 @@ export default function ProfileForm({
       if (blob && nextPath) await supabase.storage.from("avatars").remove([nextPath]);
       setBusy(false);
       return setMsg({ ok: false, text: error.message });
+    }
+
+    if (color !== saved.color || mode !== saved.mode) {
+      const { error: lookErr } = await supabase.rpc("save_appearance", {
+        p_color: color,
+        p_mode: mode === "system" ? null : mode,
+      });
+      if (lookErr) {
+        setBusy(false);
+        return setMsg({ ok: false, text: lookErr.message });
+      }
+      setSaved({ color, mode });
     }
 
     // delete the previous picture file now that it is no longer used
@@ -158,6 +190,53 @@ export default function ProfileForm({
         />
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           You only appear on the leaderboard once you choose a name.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium">Color theme</p>
+        <div className="mt-2 flex flex-wrap gap-3">
+          {COLOR_THEMES.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => chooseColor(t.key)}
+              aria-label={t.label}
+              aria-pressed={color === t.key}
+              title={t.label}
+              style={{ backgroundColor: t.swatch }}
+              className={`h-9 w-9 rounded-full ring-offset-2 ring-offset-white dark:ring-offset-neutral-950 ${
+                color === t.key ? "ring-2 ring-gray-900 dark:ring-white" : ""
+              }`}
+            />
+          ))}
+        </div>
+        <p className="mt-3 text-sm font-medium">Appearance</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(
+            [
+              ["system", "Match my device"],
+              ["light", "Light"],
+              ["dark", "Dark"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => chooseMode(key)}
+              aria-pressed={mode === key}
+              className={`rounded-full border px-4 py-1.5 text-sm ${
+                mode === key
+                  ? "border-brand-700 bg-brand-700 text-white"
+                  : "border-gray-300 dark:border-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Press Save to keep your choices on every device.
         </p>
       </div>
 

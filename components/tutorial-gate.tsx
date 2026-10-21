@@ -178,17 +178,17 @@ export default function TutorialGate({ show }: { show: boolean }) {
 
   if (minimized) {
     return (
-      <div className="fixed bottom-4 right-4 z-[70] flex items-center rounded-full bg-indigo-600 text-white shadow-lg">
+      <div className="fixed bottom-4 right-4 z-[70] flex items-center rounded-full bg-brand-600 text-white shadow-lg">
         <button
           onClick={() => setMinimized(false)}
-          className="rounded-l-full py-2.5 pl-5 pr-3 text-sm font-medium hover:bg-indigo-700"
+          className="rounded-l-full py-2.5 pl-5 pr-3 text-sm font-medium hover:bg-brand-700"
         >
           Continue tour · {step + 1} of {STEPS.length}
         </button>
         <button
           onClick={close}
           aria-label="End tour"
-          className="rounded-r-full py-2.5 pl-1 pr-4 text-white/80 hover:bg-indigo-700 hover:text-white"
+          className="rounded-r-full py-2.5 pl-1 pr-4 text-white/80 hover:bg-brand-700 hover:text-white"
         >
           <X size={16} />
         </button>
@@ -216,7 +216,7 @@ export default function TutorialGate({ show }: { show: boolean }) {
           </button>
         </div>
 
-        <div className="mt-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300">
+        <div className="mt-4 flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-950 dark:text-brand-300">
           <Icon size={24} />
         </div>
         <h2 className="mt-4 text-lg font-semibold">{s.title}</h2>
@@ -228,7 +228,7 @@ export default function TutorialGate({ show }: { show: boolean }) {
           <Link
             href={s.action.href}
             onClick={() => setMinimized(true)}
-            className="mt-4 inline-block text-sm font-medium text-indigo-600 underline underline-offset-4 dark:text-indigo-400"
+            className="mt-4 inline-block text-sm font-medium text-brand-600 underline underline-offset-4 dark:text-brand-400"
           >
             {s.action.label} →
           </Link>
@@ -240,7 +240,7 @@ export default function TutorialGate({ show }: { show: boolean }) {
               <span
                 key={i}
                 className={`h-1.5 w-1.5 rounded-full ${
-                  i === step ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-700"
+                  i === step ? "bg-brand-600" : "bg-gray-300 dark:bg-gray-700"
                 }`}
               />
             ))}

@@ -45,7 +45,7 @@ export default async function Leaderboard() {
       </p>
 
       {!mine?.display_name && (
-        <p className="mt-6 rounded-lg border border-indigo-300 bg-indigo-50 p-4 text-sm dark:border-indigo-800 dark:bg-indigo-950">
+        <p className="mt-6 rounded-lg border border-brand-300 bg-brand-50 p-4 text-sm dark:border-brand-800 dark:bg-brand-950">
           You&apos;re not on the leaderboard yet.{" "}
           <Link href="/profile" className="font-medium underline">
             Choose a display name
@@ -67,7 +67,7 @@ export default async function Leaderboard() {
             <li
               key={`${r.place}-${r.display_name}`}
               className={`flex items-center gap-4 px-4 py-3 ${
-                r.is_me ? "bg-indigo-50 dark:bg-indigo-950" : ""
+                r.is_me ? "bg-brand-50 dark:bg-brand-950" : ""
               } ${detached ? "border-t-4 border-t-gray-200 dark:border-t-gray-800" : ""}`}
             >
               <span className="w-8 text-right text-sm font-semibold text-gray-500 dark:text-gray-400">

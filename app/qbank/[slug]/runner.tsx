@@ -637,7 +637,7 @@ export default function Runner({
         )}
 
         {resumable && (
-          <div className="mt-6 rounded-lg border border-indigo-300 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-950">
+          <div className="mt-6 rounded-lg border border-brand-300 bg-brand-50 p-4 dark:border-brand-800 dark:bg-brand-950">
             <p className="font-medium">
               Unfinished {resumable.mode === "tutor" ? "tutor" : "exam"} session
             </p>
@@ -881,7 +881,7 @@ export default function Runner({
           </Link>
         </div>
 
-        <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
+        <div className="flex items-center justify-between bg-brand-900 px-4 py-2.5">
           <span className="flex items-center gap-3 text-lg font-semibold">
             View Responses
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${kind.badge}`}>
@@ -892,7 +892,7 @@ export default function Runner({
             <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={iconBtn} title="Zoom out">
               <ZoomOut size={18} />
             </button>
-            <span className="w-12 text-center text-sm text-indigo-100">{zoom}%</span>
+            <span className="w-12 text-center text-sm text-brand-100">{zoom}%</span>
             <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={iconBtn} title="Zoom in">
               <ZoomIn size={18} />
             </button>
@@ -1070,7 +1070,7 @@ export default function Runner({
             )}
             <button
               onClick={closeReview}
-              className="rounded bg-indigo-700 px-5 py-2.5 hover:bg-indigo-600"
+              className="rounded bg-brand-700 px-5 py-2.5 hover:bg-brand-600"
             >
               {reviewFrom === "history" ? "Back to bank" : "Back to results"}
             </button>
@@ -1103,7 +1103,7 @@ export default function Runner({
       cls = a.isCorrect
         ? "border-green-600 bg-green-900 text-green-100"
         : "border-red-500 bg-red-900 text-red-100";
-    else if (exam && picked[qq.id]) cls = "border-violet-500 bg-violet-700 text-white";
+    else if (exam && picked[qq.id]) cls = "border-brand-500 bg-brand-700 text-white";
     return (
       <button
         key={qq.id}
@@ -1137,7 +1137,7 @@ export default function Runner({
     return (
       <div className="flex items-center gap-3">
         {chip("unanswered", <span className="h-3.5 w-3.5 rounded-full border border-neutral-500" />, nLeft)}
-        {chip("answered", <span className="h-3.5 w-3.5 rounded-full bg-violet-600" />, nAnswered)}
+        {chip("answered", <span className="h-3.5 w-3.5 rounded-full bg-brand-600" />, nAnswered)}
         <span className="flex-1" />
         {exam && chip("flagged", <Bookmark size={14} className="fill-red-500 text-red-500" />, nFlagged)}
       </div>
@@ -1157,7 +1157,7 @@ export default function Runner({
     );
 
   const nextBtn =
-    "flex flex-1 items-center justify-center gap-3 bg-indigo-700 py-4 text-lg font-medium hover:bg-indigo-600 disabled:opacity-40";
+    "flex flex-1 items-center justify-center gap-3 bg-brand-700 py-4 text-lg font-medium hover:bg-brand-600 disabled:opacity-40";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
@@ -1191,7 +1191,7 @@ export default function Runner({
         </Link>
       </div>
 
-      <div className="flex items-center justify-between bg-indigo-900 px-4 py-2.5">
+      <div className="flex items-center justify-between bg-brand-900 px-4 py-2.5">
         <span className="text-lg font-semibold">{title}</span>
         <div className="flex items-center gap-3">
           {mode === "timed" && remaining !== null && (
@@ -1366,7 +1366,7 @@ export default function Runner({
               <button
                 onClick={submitAnswer}
                 disabled={!selected}
-                className="mt-4 rounded bg-indigo-700 px-5 py-2.5 hover:bg-indigo-600 disabled:opacity-40"
+                className="mt-4 rounded bg-brand-700 px-5 py-2.5 hover:bg-brand-600 disabled:opacity-40"
               >
                 Submit answer
               </button>
@@ -1415,7 +1415,7 @@ export default function Runner({
                     onClick={() => setPanelTab(t.key)}
                     className={`flex-1 px-4 py-2.5 font-medium ${
                       panelTab === t.key
-                        ? "border-b-2 border-indigo-400 text-white"
+                        ? "border-b-2 border-brand-400 text-white"
                         : "text-gray-400 hover:text-gray-200"
                     }`}
                   >
@@ -1491,7 +1491,7 @@ export default function Runner({
       {confirmOpen && (
         <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-20">
           <div className="w-full max-w-4xl overflow-hidden rounded bg-[#1b1e24] shadow-xl">
-            <div className="bg-indigo-700 px-5 py-3 text-lg font-semibold">Confirm your submission</div>
+            <div className="bg-brand-700 px-5 py-3 text-lg font-semibold">Confirm your submission</div>
             <div className="space-y-3 px-5 py-4 text-sm text-gray-300">
               <p>
                 <span className="font-semibold text-gray-100">Please review your submission.</span> A

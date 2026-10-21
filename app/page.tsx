@@ -66,7 +66,7 @@ function SubFolderBox({ title, banks }: { title: string; banks: Bank[] }) {
   return (
     <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
-        <Folder size={18} className="shrink-0 text-indigo-500" />
+        <Folder size={18} className="shrink-0 text-brand-500" />
         <div className="flex-1">
           <div className="text-sm font-medium">{title}</div>
           <div className="text-xs text-gray-500 dark:text-gray-400">{count(banks.length)}</div>
@@ -98,7 +98,7 @@ function FolderBox({
   return (
     <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-5">
-        <Folder size={22} className="shrink-0 text-indigo-500" />
+        <Folder size={22} className="shrink-0 text-brand-500" />
         <div className="flex-1">
           <div className="font-medium">{title}</div>
           <div className="text-sm text-gray-500 dark:text-gray-400">{count(total)}</div>

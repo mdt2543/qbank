@@ -32,7 +32,7 @@ function Row({ item, onDismiss }: { item: Item; onDismiss: () => void }) {
       className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${
         important
           ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
-          : "border-indigo-200 bg-indigo-50 text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-100"
+          : "border-brand-200 bg-brand-50 text-brand-950 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-100"
       }`}
     >
       <Icon size={18} className="mt-0.5 shrink-0" />

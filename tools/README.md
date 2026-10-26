@@ -51,9 +51,22 @@ A new bank is visible to students straight away.
 
 ## Replace a bank that is already on the site
 
-Deleting a bank also deletes every student's attempts and answers on it. Re-uploading
-under the same title with different questions would attach old answers to the wrong
-questions, so delete first, then add the new one:
+Use the same title as the bank on the site (the slug is made from it), and add `--replace`:
+
+```powershell
+python tools\qbank_import.py "<new .docx>" --bank "<same title>" --balance --case 7 --outdir temp\case-7 --image-root temp\case-7\images
+```
+
+The SQL it writes matches questions to the bank on the site **by question number**. A question
+whose stem and options (text and which one is correct) are identical keeps every student's
+answers and history; explanations are refreshed in place. A question that changed, and any
+question dropped from the document, loses its answers. Added questions are simply new.
+Attempts, and their other answers, are kept. Upload the pictures (step 3 above) and run the
+SQL (step 4) as usual. Pictures are not compared, so swapping a picture alone keeps the answers.
+
+Without `--replace`, the file is a plain upsert: answers stay attached by number even where the
+question changed, which is why `--replace` exists. To remove a bank completely instead, delete
+it first (this also deletes every student's attempts and answers on it):
 
 ```powershell
 npx supabase storage rm -r ss:///qbank-images/<bank slug> --linked --experimental --yes

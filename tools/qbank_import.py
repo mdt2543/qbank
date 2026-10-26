@@ -76,6 +76,9 @@ def slugify(t):
     return re.sub(r"[^a-z0-9]+", "-", (t or "").lower()).strip("-") or "qbank"
 
 
+NL2 = "\n\n"
+
+
 def esc(t):
     if t is None or t == "":
         return "NULL"
@@ -307,7 +310,7 @@ def balance(questions, keys, seed):
 # --------------------------------------------------------------------------
 
 def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfolder=None,
-                  image_root=None):
+                  image_root=None, replace=False):
     # one folder per bank: <slug>-upload/<slug>/<files>. The inner folder is what you drag
     # into the bucket, and image_path in the database is "<slug>/<file>".
     # (image_root, used by bulk_import.py, writes <image_root>/<slug>/ directly instead)
@@ -353,10 +356,40 @@ def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfo
             "on conflict (name) do update set "
             "description = coalesce(excluded.description, topics.description);")
     out.append("")
+    bank_id = f"(select id from qbanks where slug = {esc(slug)})"
+    ref_list = ", ".join(esc(r) for r in refs)
+    if replace:
+        # Match the document to the bank already on the site by question number
+        # (external_ref = <slug>-qNNN). A question counts as unchanged when its stem and
+        # its options (label, text, which is correct) are identical; students' answers
+        # stay on those. Changed or removed questions lose their answers.
+        out.append("-- REPLACE MODE: answers are kept on unchanged questions only")
+        out.append("create temp table _new (ref text primary key, stem text, choices jsonb) on commit drop;")
+        for n, q in questions.items():
+            k = keys[n]
+            ch = ", ".join(f"jsonb_build_array({esc(L)}, {esc(body)}, {'true' if L == k['letter'] else 'false'})"
+                           for L, body in q["choices"].items())
+            out.append(f"insert into _new values ({esc(f'{slug}-q{n:03d}')}, {esc(NL2.join(q['stem']))}, "
+                       f"jsonb_build_array({ch}));")
+        out += [
+            "create temp table _chg (question_id uuid primary key) on commit drop;",
+            "insert into _chg",
+            "select q.id from questions q left join _new n on n.ref = q.external_ref",
+            f"where q.qbank_id = {bank_id}",
+            "  and (n.ref is null",
+            "       or q.stem is distinct from n.stem",
+            "       or (select jsonb_agg(jsonb_build_array(c.label, c.body, c.is_correct) order by c.label)",
+            "             from choices c where c.question_id = q.id) is distinct from n.choices);",
+            "delete from responses where question_id in (select question_id from _chg);",
+            "delete from question_status where question_id in (select question_id from _chg);",
+            "",
+        ]
     out.append("-- remove questions no longer in the document")
-    out.append("delete from questions where qbank_id = "
-               f"(select id from qbanks where slug = {esc(slug)})")
-    out.append("  and external_ref not in (" + ", ".join(esc(r) for r in refs) + ");")
+    if replace:
+        out.append("delete from choices where question_id in (select id from questions where qbank_id = "
+                   f"{bank_id} and external_ref not in ({ref_list}));")
+    out.append(f"delete from questions where qbank_id = {bank_id}")
+    out.append("  and external_ref not in (" + ref_list + ");")
     out.append("")
 
     for n, q in questions.items():
@@ -376,13 +409,28 @@ def write_outputs(questions, keys, bank, slug, outdir, draft, folder=None, subfo
             "  qbank_id = excluded.qbank_id, topic_id = excluded.topic_id,",
             "  stem = excluded.stem, explanation = excluded.explanation,",
             "  image_path = excluded.image_path, image_caption = excluded.image_caption;",
-            f"delete from choices where question_id = (select id from questions where external_ref = {esc(ref)});",
         ]
-        for L, body in q["choices"].items():
-            out.append(
-                "insert into choices (question_id, label, body, is_correct, rationale) values "
-                f"((select id from questions where external_ref = {esc(ref)}), {esc(L)}, "
-                f"{esc(body)}, {'true' if L == k['letter'] else 'false'}, {esc(k['rationales'][L])});")
+        qid = f"(select id from questions where external_ref = {esc(ref)})"
+        if replace:
+            # unchanged questions keep their option rows (answers point at them); only
+            # the explanations are refreshed. Changed ones are rebuilt.
+            out.append(f"delete from choices where question_id = {qid} "
+                       f"and question_id in (select question_id from _chg);")
+            for L, body in q["choices"].items():
+                out.append(
+                    "insert into choices (question_id, label, body, is_correct, rationale) "
+                    f"select {qid}, {esc(L)}, {esc(body)}, {'true' if L == k['letter'] else 'false'}, "
+                    f"{esc(k['rationales'][L])} where not exists (select 1 from choices "
+                    f"where question_id = {qid} and label = {esc(L)});")
+                out.append(f"update choices set rationale = {esc(k['rationales'][L])} "
+                           f"where question_id = {qid} and label = {esc(L)};")
+        else:
+            out.append(f"delete from choices where question_id = {qid};")
+            for L, body in q["choices"].items():
+                out.append(
+                    "insert into choices (question_id, label, body, is_correct, rationale) values "
+                    f"({qid}, {esc(L)}, "
+                    f"{esc(body)}, {'true' if L == k['letter'] else 'false'}, {esc(k['rationales'][L])});")
         out.append("")
     out.append("commit;")
 
@@ -438,6 +486,10 @@ def main():
     ap.add_argument("--keep-codes", action="store_true",
                     help="keep objective codes exactly as written (by default zero-padded "
                          "codes like 00-13384 are converted to the school's 13384)")
+    ap.add_argument("--replace", action="store_true",
+                    help="write SQL that updates a bank already on the site in one step: matches "
+                         "questions by number, keeps students' answers on questions whose text and "
+                         "options are identical, clears them on changed or removed ones")
     ap.add_argument("--image-root", help=argparse.SUPPRESS)
     ap.add_argument("--seed", type=int, default=20260913)
     args = ap.parse_args()
@@ -490,7 +542,7 @@ def main():
 
     outdir.mkdir(parents=True, exist_ok=True)
     sql_path, imgdir, image_names = write_outputs(questions, keys, args.bank, slug, outdir, args.draft, args.folder, subfolder,
-                                                  args.image_root)
+                                                  args.image_root, args.replace)
 
     letters = sorted({L for q in questions.values() for L in q["choices"]})
     dist = "  ".join(f"{L}={after.get(L, 0)}" for L in letters)

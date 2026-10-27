@@ -544,13 +544,9 @@ export default function Runner({
 
   useEffect(() => {
     if (phase !== "idle") return;
+    // your own past attempts, including on a hidden bank
     supabase
-      .from("attempts")
-      .select("id, mode, submitted_at, score_correct, score_total, qbanks!inner(slug)")
-      .eq("qbanks.slug", slug)
-      .eq("status", "submitted")
-      .order("submitted_at", { ascending: false })
-      .limit(20)
+      .rpc("my_attempt_history", { p_qbank_slug: slug })
       .then(({ data }) => setHistory((data ?? []) as unknown as HistoryRow[]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);

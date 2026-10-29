@@ -35,6 +35,7 @@ type Activity = {
   sessions: number | string;
   submitted: number | string;
   last_active: string | null;
+  last_sign_in: string | null;
 };
 
 type FeedbackRow = {
@@ -61,6 +62,7 @@ type Student = {
   sessions: number;
   submitted: number;
   last: string | null;
+  signedIn: string | null;
 };
 
 type Tab = "overview" | "banks" | "students" | "feedback" | "announcements";
@@ -80,7 +82,8 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 const SORTS = [
-  { key: "last", label: "Last active" },
+  { key: "last", label: "Last answered" },
+  { key: "signin", label: "Last sign-in" },
   { key: "answered", label: "Most questions" },
   { key: "student", label: "Student" },
 ];
@@ -162,6 +165,7 @@ export default async function Admin({
         sessions: 0,
         submitted: 0,
         last: null,
+        signedIn: r.last_sign_in,
       };
       s.banks.push(r);
       s.seen += num(r.questions_seen);
@@ -179,6 +183,7 @@ export default async function Admin({
     }
     if (sort === "answered") students.sort((a, b) => b.seen - a.seen);
     else if (sort === "student") students.sort((a, b) => a.email.localeCompare(b.email));
+    else if (sort === "signin") students.sort((a, b) => (b.signedIn ?? "").localeCompare(a.signedIn ?? ""));
     else students.sort((a, b) => (b.last ?? "").localeCompare(a.last ?? ""));
   }
   const shownStudents = students.slice(0, 300);
@@ -379,7 +384,7 @@ export default async function Admin({
                   </div>
                   <div className={`text-xs tabular-nums ${muted}`}>
                     {s.banks.length} bank{s.banks.length === 1 ? "" : "s"} · {s.seen} questions · {s.submitted} of{" "}
-                    {s.sessions} sessions submitted · {ago(s.last)}
+                    {s.sessions} sessions submitted · answered {ago(s.last)} · signed in {ago(s.signedIn)}
                   </div>
                 </summary>
                 <div className="border-t border-gray-200 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900/40">
@@ -390,7 +395,7 @@ export default async function Admin({
                         <th className="py-1 pr-3 font-medium">Questions</th>
                         <th className="py-1 pr-3 font-medium">Score</th>
                         <th className="py-1 pr-3 font-medium">Sessions</th>
-                        <th className="py-1 font-medium">Last active</th>
+                        <th className="py-1 font-medium">Last answered</th>
                       </tr>
                     </thead>
                     <tbody>

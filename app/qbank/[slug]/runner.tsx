@@ -521,6 +521,7 @@ export default function Runner({
       if (document.visibilityState !== "visible") return;
       if (Math.random() >= 1 / 10000) return;
       setScare(true);
+      createClient().rpc("record_jumpscare").then(() => {});
       audio.currentTime = 0;
       audio.play().catch(() => {});
       window.clearTimeout(hide);

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Ghost } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import Avatar from "@/components/avatar";
 
@@ -8,6 +9,7 @@ type Entry = {
   display_name: string;
   avatar_path: string | null;
   total_questions: number | string;
+  jumpscares: number | null;
   is_me: boolean;
 };
 
@@ -41,7 +43,8 @@ export default async function Leaderboard() {
       <h1 className="mt-4 text-2xl font-semibold">Leaderboard</h1>
       <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
         Ranked by unique questions answered across all banks. Retaking a question doesn&apos;t
-        count twice.
+        count twice. <Ghost className="inline h-4 w-4 align-text-bottom" aria-hidden /> is how
+        many times each student has been jump scared.
       </p>
 
       {!mine?.display_name && (
@@ -82,7 +85,15 @@ export default async function Leaderboard() {
                 {r.display_name}
                 {r.is_me && <span className="ml-2 text-xs font-normal text-gray-500">you</span>}
               </span>
-              <span className="text-sm tabular-nums">{r.total_questions}</span>
+              <span
+                className="flex w-12 items-center justify-end gap-1 text-sm tabular-nums text-gray-500 dark:text-gray-400"
+                title="Times jump scared"
+              >
+                <Ghost className="h-4 w-4" aria-hidden />
+                <span className="sr-only">Jump scares:</span>
+                {r.jumpscares ?? 0}
+              </span>
+              <span className="w-12 text-right text-sm tabular-nums">{r.total_questions}</span>
             </li>
           );
         })}

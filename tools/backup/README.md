@@ -18,7 +18,7 @@ Pass `-Dir "<folder>"` to any script to use a specific backup folder (use the sa
 when a backup spans several days). Re-running skips what is already saved.
 
 **Check it.** A script printing "Done" is not proof. Run `tools\backup\count-tables.sql`
-(`npx supabase db query --linked -f ...`) and compare each table's row count with the saved files;
+(`npx supabase db query --remote --read-only -f ...`) and compare each table's row count with the saved files;
 any line saying FAILED or "MAY BE TRUNCATED" means that table needs another go.
 
 Notes: the Supabase CLI here has no Docker, so `supabase db dump` is not used. Asking for a second

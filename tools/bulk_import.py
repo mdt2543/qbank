@@ -171,7 +171,7 @@ def main():
         print("  1. Pictures. Either open the images folder, select everything inside and drag it into")
         print("     Supabase > Storage > qbank-images, or upload each bank folder from a terminal in the")
         print("     project folder (do NOT upload the images folder itself: it adds an extra 'images' layer):")
-        print('       Get-ChildItem "<images folder>" -Directory | ForEach-Object { npx supabase storage cp -r "<relative path>\\$($_.Name)" ss:///qbank-images --linked --experimental }')
+        print('       Get-ChildItem "<images folder>" -Directory | ForEach-Object { npx supabase storage cp -r "<relative path>\\$($_.Name)" ss:///qbank-images --remote --experimental }')
         print("  2. SQL Editor: run sql\\00-hide-existing-banks.sql")
         print(f"  3. SQL Editor: run {', '.join(f'{i:02d}-banks.sql' for i in range(1, len(parts) + 1))} (in order)")
 

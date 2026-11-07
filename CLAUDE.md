@@ -28,14 +28,19 @@ adds content and features step by step. Read `tools/README.md` for the bank uplo
 
 ## Supabase CLI notes
 
-- Everything goes through `--linked` (no connection string). Run `npx -y supabase --version` once
+- Everything goes through `--remote` (no connection string; CLI 3.x deprecates `--linked`, and with
+  neither option a command targets the local stack). Run `npx -y supabase --version` once
   after a CLI update, or redirected output files contain only the "install" prompt.
+- CLI 3.x asks before any change to the hosted project (default No). Scripts need `--yes`, which counts
+  as the owner's approval, so a script must be read before it runs. Read-only checks use `--read-only`.
+- In scripts, call `npx supabase ...` directly. A PowerShell wrapper using `@args` loses the arguments:
+  the CLI prints its help and exits 0, so nothing runs and no error shows. Check the result, not the exit code.
 - Query results saved with `> file.txt` come out garbled (box characters); read them directly.
   `--output-format json` gives a plain JSON array.
 - Reading big results: a second page (`offset`) of a query failed in the Management API; export in
   small queries (for example per bank) instead.
 - Storage: upload each bank's own folder, never the `images` folder itself
-  (`storage cp -r "temp\<dir>\images\<slug>" ss:///qbank-images --linked --experimental`). Verify every
+  (`storage cp -r "temp\<dir>\images\<slug>" ss:///qbank-images --remote --experimental`). Verify every
   picture from the public address (expect 200; `images/<slug>/...` should be 400).
 
 ## Content and data model
@@ -58,6 +63,7 @@ adds content and features step by step. Read `tools/README.md` for the bank uplo
 
 ## Backups
 
-`temp\backup\` holds scripts that export every table (JSON), the login accounts, and all pictures;
+`tools\backup\` holds scripts (see its README) that export every table (JSON), the login accounts,
+and all pictures into `temp\backup\site-backup-<today>`;
 they are read-only and re-runnable. Compare the saved row counts with the site's before trusting a
 backup. Backups contain student emails and password hashes: keep them out of Git and off shared drives.

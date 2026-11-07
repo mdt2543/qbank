@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 
 function Run-Json($sql) {
   for ($i = 1; $i -le 3; $i++) {
-    $raw = npx supabase db query --linked --output-format json $sql | Out-String
+    $raw = npx supabase db query --remote --read-only --output-format json $sql | Out-String
     if ($LASTEXITCODE -eq 0 -and $raw.Contains("[")) { return $raw.Substring($raw.IndexOf("[")) }
     Start-Sleep -Seconds 5
   }

@@ -5,6 +5,8 @@ How to turn Word documents into banks on the site. All generated files go in `te
 
 You run the Supabase commands yourself; run them from the project folder in PowerShell.
 Log in first with `npx supabase login` (and `npx supabase logout` when you are done).
+The CLI asks before each change to the live project, and the default answer is No: choose Yes
+to go ahead, or add `--yes` to skip the question.
 
 ## Add one bank
 
@@ -24,7 +26,7 @@ Log in first with `npx supabase login` (and `npx supabase logout` when you are d
 
    ```powershell
    python tools\case_map.py "<Case N Learning Objectives.xlsx>" --out migrations\migration_cases_data_caseN.sql
-   npx supabase db query --linked -f "migrations\migration_cases_data_caseN.sql"
+   npx supabase db query --remote -f "migrations\migration_cases_data_caseN.sql"
    ```
 
    Add `--sessions-out migrations\migration_case_sessions.sql` (pass ALL case files) to also
@@ -38,13 +40,13 @@ Log in first with `npx supabase login` (and `npx supabase logout` when you are d
    folder itself):
 
    ```powershell
-   npx supabase storage cp -r "temp\case-9\images\<bank slug>" ss:///qbank-images --linked --experimental
+   npx supabase storage cp -r "temp\case-9\images\<bank slug>" ss:///qbank-images --remote --experimental
    ```
 
 4. **Add the bank:**
 
    ```powershell
-   npx supabase db query --linked -f "temp\case-9\<bank slug>.seed.sql"
+   npx supabase db query --remote -f "temp\case-9\<bank slug>.seed.sql"
    ```
 
 A new bank is visible to students straight away.
@@ -56,7 +58,7 @@ under the same title with different questions would attach old answers to the wr
 questions, so delete first, then add the new one:
 
 ```powershell
-npx supabase storage rm -r ss:///qbank-images/<bank slug> --linked --experimental --yes
+npx supabase storage rm -r ss:///qbank-images/<bank slug> --remote --experimental --yes
 ```
 
 (plus the delete SQL: responses, attempts, question_status, choices, questions, then the bank,
@@ -65,7 +67,7 @@ all in one transaction. Ask Claude to write it for the bank you name.)
 ## Hide or show banks
 
 ```powershell
-npx supabase db query --linked "update public.qbanks set is_published = false where slug = '<bank slug>'"
+npx supabase db query --remote "update public.qbanks set is_published = false where slug = '<bank slug>'"
 ```
 
 Use `true` to show it again. Nothing is deleted; students' answers keep counting.

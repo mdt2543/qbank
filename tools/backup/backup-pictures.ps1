@@ -8,12 +8,12 @@ $dest = "$Dir\qbank-images"
 New-Item -ItemType Directory -Force $dest | Out-Null
 Get-ChildItem $dest -Directory -Filter "*.partial" | Remove-Item -Recurse -Force
 
-$folders = npx supabase storage ls "ss:///qbank-images/" --linked --experimental | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "*/" } | ForEach-Object { $_.TrimEnd("/") }
+$folders = npx supabase storage ls "ss:///qbank-images/" --remote --experimental | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "*/" } | ForEach-Object { $_.TrimEnd("/") }
 Write-Host "$($folders.Count) folders in the bucket"
 foreach ($f in $folders) {
   if (Test-Path "$dest\$f") { continue }
   for ($i = 1; $i -le 3; $i++) {
-    npx supabase storage cp -r "ss:///qbank-images/$f" "$dest\$f.partial" --linked --experimental | Out-Null
+    npx supabase storage cp -r "ss:///qbank-images/$f" "$dest\$f.partial" --remote --experimental | Out-Null
     if ($LASTEXITCODE -eq 0) { Move-Item "$dest\$f.partial" "$dest\$f"; break }
     Remove-Item -Recurse -Force "$dest\$f.partial" -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 5

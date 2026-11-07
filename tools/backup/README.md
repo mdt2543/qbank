@@ -23,5 +23,5 @@ any line saying FAILED or "MAY BE TRUNCATED" means that table needs another go.
 
 Notes: the Supabase CLI here has no Docker, so `supabase db dump` is not used. Asking for a second
 page of a table (`offset`) failed through the Management API, which is why large tables are split by
-bank. The scripts were first run in an earlier form; these tidied copies take the folder as a
-parameter and have not been run end to end yet, so check the counts the first time.
+bank. These scripts ran end to end on 2026-11-07 with CLI 3.0.0, and every table's count matched the
+site. Still check the counts each time.

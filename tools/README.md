@@ -33,6 +33,10 @@ to go ahead, or add `--yes` to skip the question.
    record which session each objective belongs to, then run that file. This is what the
    Performance "By case" session dropdowns use.
 
+   Those session names come from the spreadsheet. Performance shows the bank titles instead:
+   after running the sessions file, run `migrations\migration_033.sql` again (and add new
+   cases' renames to it) so the names match the banks.
+
    Use the reworded spreadsheet, not the "(BACKUP original)" one. Case titles are kept
    generic on purpose: the tool drops patient names.
 

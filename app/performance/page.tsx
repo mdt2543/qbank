@@ -3,14 +3,20 @@ import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import ClassAverage from "@/components/class-average";
 
-type View = "case" | "bank" | "progress";
+type View = "sessions" | "exams" | "progress";
 
 const TABS: { key: View; label: string }[] = [
-  { key: "case", label: "By case" },
-  { key: "bank", label: "By question bank" },
+  { key: "sessions", label: "Session banks" },
+  { key: "exams", label: "Practice exams" },
   { key: "progress", label: "Progress" },
 ];
 
+type BankRow = Metric & { slug: string; bank: string; questions: number | string; total: number | string };
+
+// "Case 7 - Heart Function Practice Questions" -> "Heart Function" (the session's name)
+function sessionName(title: string) {
+  return title.replace(/^Case \d+ - /, "").replace(/ Practice Questions$/, "");
+}
 
 type BankObj = Metric & {
   slug: string;
@@ -129,6 +135,29 @@ function Bar({ pct }: { pct: number }) {
   );
 }
 
+function Objectives({ objs, latest }: { objs: BankObj[]; latest: boolean }) {
+  return (
+    <>
+      {weakestFirst(objs, latest, (o) => o.topic).map((o) => (
+        <div key={`${o.session}-${o.topic}`}>
+          <div className="flex items-baseline justify-between gap-4">
+            <div>
+              <span className="text-sm font-medium">{o.topic}</span>
+              {o.description && (
+                <p className="mt-0.5 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                  {o.description}
+                </p>
+              )}
+            </div>
+            <Score r={pick(o, latest)} />
+          </div>
+          <Bar pct={toPct(pick(o, latest))} />
+        </div>
+      ))}
+    </>
+  );
+}
+
 function Score({ r }: { r: Row }) {
   return (
     <span className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
@@ -146,9 +175,10 @@ export default async function Performance({
   searchParams: Promise<{ view?: string; mode?: string }>;
 }) {
   const { view: v } = await searchParams;
-  const view: View = v === "bank" || v === "progress" ? v : "case";
+  // "bank" was the old name of the Practice exams tab
+  const view: View = v === "exams" || v === "bank" ? "exams" : v === "progress" ? "progress" : "sessions";
   const latest = true; // performance always shows mastery: the newest answer to each question
-  const href = (key: View) => (key === "case" ? "/performance" : `/performance?view=${key}`);
+  const href = (key: View) => (key === "sessions" ? "/performance" : `/performance?view=${key}`);
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -160,22 +190,27 @@ export default async function Performance({
   const answered = rows?.reduce((n, r) => n + Number(pick(r, latest).answered), 0) ?? 0;
   const correct = rows?.reduce((n, r) => n + Number(pick(r, latest).correct), 0) ?? 0;
 
-  const { data: cases } =
-    view === "case" ? await supabase.from("v_perf_case").select("*") : { data: null };
-  const { data: caseObjs } =
-    view === "case"
-      ? await supabase.from("v_perf_case_objective").select("*")
-      : { data: null };
-  // sessions inside each case; if this view isn't installed yet, the plain list is shown
-  const { data: caseSessionObjs } =
-    view === "case"
-      ? await supabase.from("v_perf_case_session_objective").select("*")
-      : { data: null };
-  const { data: banks } =
-    view === "bank" ? await supabase.from("v_perf_bank").select("*") : { data: null };
+  const byBank = view === "sessions" || view === "exams";
+  const { data: bankRows } = byBank ? await supabase.from("v_perf_bank").select("*") : { data: null };
+  // session banks sit in the Case Review folder (subfolder case-N); everything else is a practice exam
+  const { data: placeRows } = byBank
+    ? await supabase.from("qbanks").select("slug, folder, subfolder")
+    : { data: null };
+  const place = new Map(
+    (placeRows ?? []).map((r) => [
+      r.slug as string,
+      { folder: r.folder as string | null, subfolder: r.subfolder as string | null },
+    ])
+  );
+  const caseOf = (slug: string) => {
+    const p = place.get(slug);
+    const m = p?.folder === "case-review" ? /^case-(\d+)$/.exec(p.subfolder ?? "") : null;
+    return m ? Number(m[1]) : null;
+  };
+  const allBanks = (bankRows ?? []) as BankRow[];
+  const banks = view === "exams" ? allBanks.filter((b) => caseOf(b.slug) === null) : allBanks;
   // class average per bank (only banks with at least 2 qualifying students come back)
-  const { data: avgRows } =
-    view === "bank" ? await supabase.rpc("class_averages") : { data: null };
+  const { data: avgRows } = byBank ? await supabase.rpc("class_averages") : { data: null };
   const classAvg = new Map(
     // avg_pct is null when the student hasn't turned on jump scare mode (shown as "hidden")
     ((avgRows ?? []) as { slug: string; avg_pct: number | string | null }[]).map((r) => [
@@ -184,11 +219,24 @@ export default async function Performance({
     ])
   );
   // cases and sessions inside each bank; if this view isn't installed yet, banks show plain
-  const { data: bankObjRows } =
-    view === "bank"
-      ? await supabase.from("v_perf_bank_case_session_objective").select("*")
-      : { data: null };
+  const { data: bankObjRows } = byBank
+    ? await supabase.from("v_perf_bank_case_session_objective").select("*")
+    : { data: null };
   const bankObjs = (bankObjRows ?? []) as BankObj[];
+
+  // Session banks tab: case -> its session banks, counting only answers given in those banks
+  const sessionCases = new Map<number, { title: string | null; banks: BankRow[] }>();
+  if (view === "sessions") {
+    for (const b of allBanks) {
+      const n = caseOf(b.slug);
+      if (n === null) continue;
+      const c = sessionCases.get(n) ?? { title: null, banks: [] };
+      c.title ??= bankObjs.find((o) => o.slug === b.slug)?.case_title ?? null;
+      c.banks.push(b);
+      sessionCases.set(n, c);
+    }
+  }
+  const sessionCaseList = [...sessionCases.entries()].sort((x, y) => x[0] - y[0]);
 
   // submitted attempts per bank, for the Progress tab (deleted attempts no longer exist)
   const { data: attemptRows } =
@@ -240,122 +288,80 @@ export default async function Performance({
           </p>
 
           <div className="mt-6 space-y-2">
-            {view === "case" &&
-              (cases?.length ? (
-                cases.map((c) => (
-                  <details
-                    key={c.case_number}
-                    className="group rounded-lg border border-gray-200 dark:border-gray-800"
-                  >
-                    <summary className="cursor-pointer list-none p-4">
-                      <div className="flex items-baseline justify-between gap-4">
-                        <span className="text-sm font-medium">
-                          <span className="mr-2 inline-block text-gray-400 transition-transform group-open:rotate-90">
-                            ▸
-                          </span>
-                          Case {c.case_number}
-                          {c.title && (
-                            <span className="font-normal text-gray-500 dark:text-gray-400">
-                              {" "}
-                              · {c.title}
+            {view === "sessions" &&
+              (sessionCaseList.length ? (
+                sessionCaseList.map(([caseNumber, c]) => {
+                  const caseTotal = sumMetrics(c.banks);
+                  const caseBanks = [...c.banks].sort((x, y) =>
+                    sessionName(x.bank).localeCompare(sessionName(y.bank))
+                  );
+                  return (
+                    <details
+                      key={caseNumber}
+                      className="group rounded-lg border border-gray-200 dark:border-gray-800"
+                    >
+                      <summary className="cursor-pointer list-none p-4">
+                        <div className="flex items-baseline justify-between gap-4">
+                          <span className="text-sm font-medium">
+                            <span className="mr-2 inline-block text-gray-400 transition-transform group-open:rotate-90">
+                              ▸
                             </span>
-                          )}
-                        </span>
-                        <Score r={pick(c, latest)} />
-                      </div>
-                      <Bar pct={toPct(pick(c, latest))} />
-                    </summary>
-                    <div className="space-y-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-                      {caseSessionObjs ? (
-                        (() => {
-                          type CaseSessionObj = Metric & {
-                            case_number: number;
-                            session: string;
-                            topic: string;
-                            description: string | null;
-                          };
-                          const mine = (caseSessionObjs as CaseSessionObj[]).filter((o) => o.case_number === c.case_number);
-                          const sections = new Map<string, CaseSessionObj[]>();
-                          for (const o of mine) {
-                            const list = sections.get(o.session) ?? [];
-                            list.push(o);
-                            sections.set(o.session, list);
-                          }
-                          return [...sections.entries()]
-                            .sort(
-                              (a, b) =>
-                                Number(a[0] === "Other objectives") - Number(b[0] === "Other objectives") ||
-                                a[0].localeCompare(b[0])
-                            )
-                            .map(([session, objs]) => {
-                              const total = sumMetrics(objs);
-                              return (
-                                <details
-                                  key={session}
-                                  className="group/sec rounded-lg border border-gray-200 dark:border-gray-800"
-                                >
-                                  <summary className="cursor-pointer list-none p-3">
-                                    <div className="flex items-baseline justify-between gap-4">
-                                      <span className="text-sm font-medium">
-                                        <span className="mr-2 inline-block text-gray-400 transition-transform group-open/sec:rotate-90">
-                                          ▸
-                                        </span>
-                                        {session}
-                                      </span>
-                                      <Score r={pick(total, latest)} />
-                                    </div>
-                                    <Bar pct={toPct(pick(total, latest))} />
-                                  </summary>
-                                  <div className="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
-                                    {weakestFirst(objs, latest, (o) => o.topic).map((o) => (
-                                      <div key={o.topic}>
-                                        <div className="flex items-baseline justify-between gap-4">
-                                          <div>
-                                            <span className="text-sm font-medium">{o.topic}</span>
-                                            {o.description && (
-                                              <p className="mt-0.5 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-                                                {o.description}
-                                              </p>
-                                            )}
-                                          </div>
-                                          <Score r={pick(o, latest)} />
-                                        </div>
-                                        <Bar pct={toPct(pick(o, latest))} />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </details>
-                              );
-                            });
-                        })()
-                      ) : (
-                        weakestFirst(
-                          (caseObjs ?? []).filter((o) => o.case_number === c.case_number),
-                          latest,
-                          (o) => o.topic
-                        ).map((o) => (
-                          <div key={o.topic}>
-                            <div className="flex items-baseline justify-between gap-4">
-                              <div>
-                                <span className="text-sm font-medium">{o.topic}</span>
-                                {o.description && (
-                                  <p className="mt-0.5 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-                                    {o.description}
+                            Case {caseNumber}
+                            {c.title && (
+                              <span className="font-normal text-gray-500 dark:text-gray-400">
+                                {" "}
+                                · {c.title}
+                              </span>
+                            )}
+                          </span>
+                          <Score r={pick(caseTotal, latest)} />
+                        </div>
+                        <Bar pct={toPct(pick(caseTotal, latest))} />
+                      </summary>
+                      <div className="space-y-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+                        {caseBanks.map((b) => (
+                          <details
+                            key={b.slug}
+                            className="group/sess rounded-lg border border-gray-200 dark:border-gray-800"
+                          >
+                            <summary className="cursor-pointer list-none p-3">
+                              <div className="flex items-baseline justify-between gap-4">
+                                <div>
+                                  <span className="text-sm font-medium">
+                                    <span className="mr-2 inline-block text-gray-400 transition-transform group-open/sess:rotate-90">
+                                      ▸
+                                    </span>
+                                    {sessionName(b.bank)}
+                                  </span>
+                                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                    {b.questions} of {b.total} questions attempted
                                   </p>
-                                )}
+                                  {classAvg.has(b.slug) && (
+                                    <ClassAverage
+                                      pct={classAvg.get(b.slug) ?? null}
+                                      className="mt-0.5 text-sm text-gray-500 dark:text-gray-400"
+                                    />
+                                  )}
+                                </div>
+                                <Score r={pick(b, latest)} />
                               </div>
-                              <Score r={pick(o, latest)} />
+                              <Bar pct={toPct(pick(b, latest))} />
+                            </summary>
+                            <div className="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
+                              <Link href={`/qbank/${b.slug}`} className="text-xs text-gray-500 underline dark:text-gray-400">
+                                Open this question bank →
+                              </Link>
+                              <Objectives objs={bankObjs.filter((o) => o.slug === b.slug)} latest={latest} />
                             </div>
-                            <Bar pct={toPct(pick(o, latest))} />
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </details>
-                ))
+                          </details>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })
               ) : (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  No answered questions are linked to a case yet.
+                  Answer questions in a session bank and your results will appear here.
                 </p>
               ))}
 
@@ -422,8 +428,13 @@ export default async function Performance({
                 </p>
               ))}
 
-            {view === "bank" &&
-              banks?.map((b) => {
+            {view === "exams" && !banks.length && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Answer questions in a practice exam and your results will appear here.
+              </p>
+            )}
+            {view === "exams" &&
+              banks.map((b) => {
                 const objs = bankObjs.filter((o) => o.slug === b.slug);
                 const cases = new Map<number, { title: string; objs: BankObj[] }>();
                 for (const o of objs) {
@@ -554,22 +565,7 @@ export default async function Performance({
                                       <Bar pct={toPct(pick(sessionTotal, latest))} />
                                     </summary>
                                     <div className="space-y-3 border-t border-gray-200 px-3 py-3 dark:border-gray-800">
-                                      {weakestFirst(sObjs, latest, (o) => o.topic).map((o) => (
-                                        <div key={o.topic}>
-                                          <div className="flex items-baseline justify-between gap-4">
-                                            <div>
-                                              <span className="text-sm font-medium">{o.topic}</span>
-                                              {o.description && (
-                                                <p className="mt-0.5 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-                                                  {o.description}
-                                                </p>
-                                              )}
-                                            </div>
-                                            <Score r={pick(o, latest)} />
-                                          </div>
-                                          <Bar pct={toPct(pick(o, latest))} />
-                                        </div>
-                                      ))}
+                                      <Objectives objs={sObjs} latest={latest} />
                                     </div>
                                   </details>
                                 );

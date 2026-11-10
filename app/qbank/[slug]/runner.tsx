@@ -50,6 +50,17 @@ type ReviewRow = {
   rationales: Record<string, string | null> | null;
 };
 
+// which case and session a question's objective belongs to (for "By session" in review)
+type QSession = {
+  question_id: string;
+  case_number: number;
+  case_title: string;
+  session_title: string | null;
+  session_starts_at: string | null;
+};
+
+type ReviewView = "all" | "wrong" | "session";
+
 type HistoryRow = {
   id: string;
   mode: string;
@@ -154,7 +165,8 @@ export default function Runner({
   const [calcLoaded, setCalcLoaded] = useState(false); // the calculator keeps its contents once opened
   const [navFilter, setNavFilter] = useState<"all" | "unanswered" | "answered" | "flagged">("all");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [reviewPage, setReviewPage] = useState(0);
+  const [reviewView, setReviewView] = useState<ReviewView>("all");
+  const [qSessions, setQSessions] = useState<Record<string, QSession>>({});
   const [finishedAt, setFinishedAt] = useState<Date | null>(null);
   const [classAvg, setClassAvg] = useState<{ pct: number | null } | null>(null);
   const [jumpscaresOn, setJumpscaresOn] = useState(jumpscares);
@@ -235,7 +247,7 @@ export default function Runner({
     });
     setFinishedAt(new Date(h.submitted_at));
     setReviewFrom("history");
-    setReviewPage(0);
+    setReviewView("all");
     setReviewing(true);
   }
 
@@ -280,6 +292,11 @@ export default function Runner({
       Object.fromEntries(
         (tp ?? []).map((t) => [t.id, { name: t.name, description: t.description }])
       )
+    );
+    // an error (e.g. the function isn't installed yet) just hides "By session"
+    const { data: qsess } = await supabase.rpc("qbank_question_sessions", { p_slug: slug });
+    setQSessions(
+      Object.fromEntries(((qsess ?? []) as QSession[]).map((r) => [r.question_id, r]))
     );
     const { data: cs } = await supabase
       .from("v_choice")
@@ -848,7 +865,7 @@ export default function Runner({
               setIndex(0);
               setSelected(null);
               setReviewing(true);
-              setReviewPage(0);
+              setReviewView("all");
               setPhase("active");
             }}
             className={primaryBtn}
@@ -877,13 +894,42 @@ export default function Runner({
   const answer = answers[q.id];
 
   if (reviewing) {
-    const PAGE = 50;
-    const pages = Math.max(1, Math.ceil(questions.length / PAGE));
-    const from = reviewPage * PAGE;
-    const slice = questions.slice(from, from + PAGE);
     const pct = score && score.total ? Math.round((1000 * score.correct) / score.total) / 10 : 0;
-    const goPage = (n: number) => {
-      setReviewPage(n);
+    // "By session" is offered only when the attempt covers more than one session (practice exams)
+    const sessionKey = (s?: QSession) => (s?.session_title ? `${s.case_number}|${s.session_title}` : "");
+    const multiSession = new Set(questions.map((qq) => sessionKey(qSessions[qq.id])).filter(Boolean)).size > 1;
+    const view: ReviewView = reviewView === "session" && !multiSession ? "all" : reviewView;
+    // every question keeps its number from the attempt; "By session" adds a heading per session
+    let list = questions.map((qq, i) => ({ qq, n: i + 1, heading: null as string | null }));
+    if (view === "wrong") list = list.filter((x) => !answers[x.qq.id]?.isCorrect);
+    if (view === "session") {
+      const at = (x: (typeof list)[number]) => qSessions[x.qq.id];
+      list = [...list].sort((x, y) => {
+        const a = at(x);
+        const b = at(y);
+        return (
+          Number(!sessionKey(a)) - Number(!sessionKey(b)) ||
+          (a?.case_number ?? 0) - (b?.case_number ?? 0) ||
+          (a?.session_starts_at ?? "~").localeCompare(b?.session_starts_at ?? "~") ||
+          (a?.session_title ?? "").localeCompare(b?.session_title ?? "") ||
+          x.n - y.n
+        );
+      });
+      let last: string | null = null;
+      for (const x of list) {
+        const s = at(x);
+        const label = sessionKey(s) ? `Case ${s.case_number} · ${s.session_title}` : "Other questions";
+        if (label !== last) x.heading = label;
+        last = label;
+      }
+    }
+    const VIEWS: { key: ReviewView; label: string }[] = [
+      { key: "all", label: "Entire session" },
+      { key: "wrong", label: "Wrong answers only" },
+      ...(multiSession ? [{ key: "session" as const, label: "By session" }] : []),
+    ];
+    const pickView = (v: ReviewView) => {
+      setReviewView(v);
       if (reviewScroll.current) reviewScroll.current.scrollTop = 0;
     };
     const iconBtn = "rounded p-1.5 text-white hover:bg-white/15 disabled:opacity-30";
@@ -936,14 +982,20 @@ export default function Runner({
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1 text-base font-semibold">
-            <button onClick={() => goPage(reviewPage - 1)} disabled={reviewPage === 0} className={iconBtn}>
-              <ChevronLeft size={18} />
-            </button>
-            {from + 1} - {from + slice.length}
-            <button onClick={() => goPage(reviewPage + 1)} disabled={reviewPage >= pages - 1} className={iconBtn}>
-              <ChevronRight size={18} />
-            </button>
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {VIEWS.map((v) => (
+              <button
+                key={v.key}
+                onClick={() => pickView(v.key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${
+                  view === v.key
+                    ? "bg-white text-black ring-white"
+                    : "text-gray-200 ring-white/30 hover:bg-white/10"
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -952,7 +1004,10 @@ export default function Runner({
           className="min-h-0 flex-1 overflow-y-auto"
           style={{ fontSize: `${(17 * zoom) / 100}px` }}
         >
-          {slice.map((qq, i) => {
+          {view === "wrong" && list.length === 0 && (
+            <p className="px-6 py-10 text-center text-gray-300">No wrong answers in this attempt.</p>
+          )}
+          {list.map(({ qq, n, heading }) => {
             const a = answers[qq.id];
             const cs = choices[qq.id] ?? [];
             const picked_ = cs.find((c) => c.id === a?.selectedId);
@@ -971,8 +1026,13 @@ export default function Runner({
 
             return (
               <section key={qq.id} className="border-b border-neutral-800 px-6 py-6">
+                {heading && (
+                  <h2 className="-mx-6 -mt-6 mb-6 bg-slate-800/70 px-6 py-2.5 text-[0.85em] font-semibold text-brand-100">
+                    {heading}
+                  </h2>
+                )}
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-400">
-                  #{from + i + 1}
+                  #{n}
                   {mode !== "tutor" && flags[qq.id] && (
                     <Bookmark size={14} className="fill-amber-400 text-amber-400" />
                   )}
@@ -988,6 +1048,7 @@ export default function Runner({
                     <a href={src} target="_blank" rel="noreferrer" title="Open full size">
                       <img
                         src={src}
+                        loading="lazy"
                         alt={qq.image_caption ?? "Figure"}
                         className="w-auto max-w-full rounded border border-neutral-800 bg-black object-contain"
                         style={{ maxHeight: `${(16 * zoom) / 100}rem` }}
@@ -1076,22 +1137,6 @@ export default function Runner({
           })}
 
           <div className="flex justify-center gap-3 px-6 py-8">
-            {reviewPage > 0 && (
-              <button
-                onClick={() => goPage(reviewPage - 1)}
-                className="rounded bg-neutral-800 px-5 py-2.5 hover:bg-neutral-700"
-              >
-                Previous {PAGE}
-              </button>
-            )}
-            {reviewPage < pages - 1 && (
-              <button
-                onClick={() => goPage(reviewPage + 1)}
-                className="rounded bg-neutral-800 px-5 py-2.5 hover:bg-neutral-700"
-              >
-                Next {PAGE}
-              </button>
-            )}
             <button
               onClick={closeReview}
               className="rounded bg-brand-700 px-5 py-2.5 hover:bg-brand-600"

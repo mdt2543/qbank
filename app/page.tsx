@@ -171,6 +171,23 @@ export default async function Home() {
     folderOf = new Map(adminRows.map((r) => [r.slug, r.folder]));
     subOf = new Map(adminRows.map((r) => [r.slug, r.subfolder]));
   }
+  // inside a Case folder, banks follow course order (when their session first meets); banks
+  // without a date keep upload order after them. An error (function not installed) keeps upload order.
+  const { data: startRows } = await supabase.rpc("qbank_session_starts");
+  const startOf = new Map(
+    ((startRows ?? []) as { slug: string; starts_at: string | null }[]).map((r) => [r.slug, r.starts_at])
+  );
+  const uploadRank = new Map(qbanks.map((b, i) => [b.slug, i]));
+  qbanks = [...qbanks].sort((a, b) => {
+    const x = (subOf.get(a.slug) ?? "").startsWith("case-") ? startOf.get(a.slug) : null;
+    const y = (subOf.get(b.slug) ?? "").startsWith("case-") ? startOf.get(b.slug) : null;
+    return (
+      Number(!x) - Number(!y) ||
+      (x && y ? x.localeCompare(y) : 0) ||
+      (uploadRank.get(a.slug) ?? 0) - (uploadRank.get(b.slug) ?? 0)
+    );
+  });
+
   const known = new Set(FOLDERS.map((f) => f.key));
   const unfiled = qbanks.filter((b) => !known.has(folderOf.get(b.slug) ?? ""));
   const anyFiled = unfiled.length < qbanks.length;

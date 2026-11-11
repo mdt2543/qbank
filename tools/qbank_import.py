@@ -426,7 +426,7 @@ def main():
     ap.add_argument("--folder", choices=["case-review", "exam-prep"],
                     help="home-page folder for this bank (needs migration_015.sql); "
                          "omit to leave the bank's folder unchanged")
-    ap.add_argument("--case", type=int, choices=range(1, 15), metavar="1-14",
+    ap.add_argument("--case", type=int, choices=range(1, 17), metavar="1-16",
                     help="put the bank in the Case Review subfolder 'Case N' "
                          "(needs migration_017.sql; implies --folder case-review)")
     ap.add_argument("--exam", type=int, choices=range(1, 7), metavar="1-6",

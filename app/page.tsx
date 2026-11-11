@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
 import { ChevronRight, Folder } from "lucide-react";
 import AnnouncementBar from "@/components/announcement-bar";
+import BankList, { type Bank } from "@/components/bank-card";
+import FolderPicker from "@/components/folder-picker";
 
 type Sub = { key: string; title: string };
 
-// Subfolders inside Case Review: Case 1 ... Case 14
-const CASE_SUBFOLDERS: Sub[] = Array.from({ length: 14 }, (_, i) => ({
+// Subfolders inside Case Review: Case 1 ... Case 16
+const CASE_SUBFOLDERS: Sub[] = Array.from({ length: 16 }, (_, i) => ({
   key: `case-${i + 1}`,
   title: `Case ${i + 1}`,
 }));
@@ -25,14 +26,6 @@ const FOLDERS: { key: string; title: string; subfolders: Sub[] }[] = [
   { key: "exam-prep", title: "Exam Prep", subfolders: EXAM_SUBFOLDERS },
 ];
 
-type Bank = {
-  slug: string;
-  title: string;
-  description: string | null;
-  question_count: number | string;
-  hidden?: boolean; // only ever set for admins
-};
-
 type AdminBank = {
   slug: string;
   title: string;
@@ -43,66 +36,26 @@ type AdminBank = {
   question_count: number | string;
 };
 
-function BankCard({ qb }: { qb: Bank }) {
-  return (
-    <Link
-      href={`/qbank/${qb.slug}`}
-      className="block rounded-lg border border-gray-200 p-5 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
-    >
-      <div className="font-medium">
-        {qb.title}
-        {qb.hidden && (
-          <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            Hidden from students
-          </span>
-        )}
-      </div>
-      <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        {qb.question_count} questions
-      </div>
-    </Link>
-  );
-}
-
 function count(n: number) {
   return `${n} question bank${n === 1 ? "" : "s"}`;
 }
 
-function SubFolderBox({ title, banks }: { title: string; banks: Bank[] }) {
-  return (
-    <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
-        <Folder size={18} className="shrink-0 text-brand-500" />
-        <div className="flex-1">
-          <div className="text-sm font-medium">{title}</div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">{count(banks.length)}</div>
-        </div>
-        <ChevronRight
-          size={16}
-          className="shrink-0 text-gray-400 transition-transform group-open:rotate-90"
-        />
-      </summary>
-      <div className="space-y-3 border-t border-gray-200 p-3 dark:border-gray-800">
-        {banks.map((qb) => (
-          <BankCard key={qb.slug} qb={qb} />
-        ))}
-      </div>
-    </details>
-  );
-}
-
 function FolderBox({
+  folderKey,
   title,
   banks,
   subs = [],
+  open = false,
 }: {
+  folderKey?: string;
   title: string;
   banks: Bank[];
   subs?: { key: string; title: string; banks: Bank[] }[];
+  open?: boolean;
 }) {
   const total = banks.length + subs.reduce((n, s) => n + s.banks.length, 0);
   return (
-    <details className="group rounded-lg border border-gray-200 dark:border-gray-800">
+    <details open={open} className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-5">
         <Folder size={22} className="shrink-0 text-brand-500" />
         <div className="flex-1">
@@ -115,12 +68,8 @@ function FolderBox({
         />
       </summary>
       <div className="space-y-3 border-t border-gray-200 p-4 dark:border-gray-800">
-        {banks.map((qb) => (
-          <BankCard key={qb.slug} qb={qb} />
-        ))}
-        {subs.map((s) => (
-          <SubFolderBox key={s.key} title={s.title} banks={s.banks} />
-        ))}
+        <BankList banks={banks} />
+        {subs.length > 0 && <FolderPicker storageKey={`home-folder:${folderKey ?? title}`} subs={subs} />}
       </div>
     </details>
   );
@@ -202,7 +151,7 @@ export default async function Home() {
           <p className="text-sm text-gray-500">No published question banks found.</p>
         ) : !anyFiled ? (
           // no folders assigned yet: show the plain list as before
-          qbanks.map((qb) => <BankCard key={qb.slug} qb={qb} />)
+          <BankList banks={qbanks} />
         ) : (
           <>
             {FOLDERS.map((f) => {
@@ -219,7 +168,16 @@ export default async function Home() {
                 .filter((s) => s.banks.length > 0);
               // and so does a folder
               if (!inFolder.length) return null;
-              return <FolderBox key={f.key} title={f.title} banks={loose} subs={subs} />;
+              return (
+                <FolderBox
+                  key={f.key}
+                  folderKey={f.key}
+                  title={f.title}
+                  banks={loose}
+                  subs={subs}
+                  open={f.key === "case-review"}
+                />
+              );
             })}
             {unfiled.length > 0 && <FolderBox title="Other" banks={unfiled} />}
           </>

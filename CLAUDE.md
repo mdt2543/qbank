@@ -45,7 +45,7 @@ adds content and features step by step. Read `tools/README.md` for the bank uplo
 
 ## Content and data model
 
-- Banks: `qbanks.folder` is `case-review` or `exam-prep`; `subfolder` is `case-1..14` or `exam-1..6`
+- Banks: `qbanks.folder` is `case-review` or `exam-prep`; `subfolder` is `case-1..16` or `exam-1..6`
   (lowercase, hyphenated). `--draft` imports a bank hidden (`is_published = false`).
 - Convert with `python tools/qbank_import.py ... --case N` (run WITHOUT `-I`; it breaks python-docx).
   Cross-check every objective code against the case's reworded workbook before uploading.

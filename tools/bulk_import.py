@@ -70,7 +70,7 @@ def main():
     for f in docs:
         title = f.stem
         m = re.match(r"\s*Case\s*(\d{1,2})\b", title, re.I)
-        case = int(m.group(1)) if m and 1 <= int(m.group(1)) <= 14 else None
+        case = int(m.group(1)) if m and 1 <= int(m.group(1)) <= 16 else None
         m = re.match(r"\s*Exam\s*(\d)\b", title, re.I)
         exam = int(m.group(1)) if m and 1 <= int(m.group(1)) <= 6 else None
         plan.append((f, title, qi.slugify(title), case, exam))

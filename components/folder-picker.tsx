@@ -73,6 +73,13 @@ export default function FolderPicker({
                 {" "}
                 – {s.banks.length} bank{s.banks.length === 1 ? "" : "s"}
               </span>
+              {s.banks.some((b) => b.open) && (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full bg-brand-500"
+                  title="Session in progress"
+                  aria-label="Session in progress"
+                />
+              )}
             </button>
           );
         })}

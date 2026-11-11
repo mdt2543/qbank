@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ChevronRight, Folder } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Folder, PlayCircle } from "lucide-react";
 import AnnouncementBar from "@/components/announcement-bar";
 import BankList, { type Bank } from "@/components/bank-card";
 import FolderPicker from "@/components/folder-picker";
@@ -26,6 +27,15 @@ const FOLDERS: { key: string; title: string; subfolders: Sub[] }[] = [
   { key: "exam-prep", title: "Exam Prep", subfolders: EXAM_SUBFOLDERS },
 ];
 
+type OpenSession = {
+  slug: string;
+  mode: string;
+  answered: number | string;
+  total: number;
+  started_at: string;
+  last_activity: string;
+};
+
 type AdminBank = {
   slug: string;
   title: string;
@@ -35,6 +45,12 @@ type AdminBank = {
   subfolder: string | null;
   question_count: number | string;
 };
+
+// "Case 10 - Sole of the Foot and Ankle 2 Practice Questions" -> "Case 10 · Sole of the Foot and Ankle 2"
+function continueLabel(title: string) {
+  const m = /^Case (\d+) - (.*?)(?: Practice Questions)?$/.exec(title);
+  return m ? `Case ${m[1]} · ${m[2]}` : title;
+}
 
 function count(n: number) {
   return `${n} question bank${n === 1 ? "" : "s"}`;
@@ -53,14 +69,21 @@ function FolderBox({
   subs?: { key: string; title: string; banks: Bank[] }[];
   open?: boolean;
 }) {
-  const total = banks.length + subs.reduce((n, s) => n + s.banks.length, 0);
+  const all = [...banks, ...subs.flatMap((s) => s.banks)];
+  const inProgress = all.filter((b) => b.open).length;
   return (
     <details open={open} className="group rounded-lg border border-gray-200 dark:border-gray-800">
       <summary className="flex cursor-pointer list-none items-center gap-3 p-5">
         <Folder size={22} className="shrink-0 text-brand-500" />
         <div className="flex-1">
           <div className="font-medium">{title}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">{count(total)}</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">{count(all.length)}</div>
+          {inProgress > 0 && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-brand-600 dark:text-brand-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+              {inProgress} session{inProgress === 1 ? "" : "s"} in progress
+            </div>
+          )}
         </div>
         <ChevronRight
           size={18}
@@ -137,6 +160,20 @@ export default async function Home() {
     );
   });
 
+  // banks where this student has a session they can resume (same rules as the bank page's
+  // Resume prompt). An error (function not installed) means no markers.
+  const { data: openRows } = await supabase.rpc("my_open_sessions");
+  const openSessions = ((openRows ?? []) as OpenSession[]).sort((a, b) =>
+    b.last_activity.localeCompare(a.last_activity)
+  );
+  const openOf = new Map(openSessions.map((o) => [o.slug, o]));
+  qbanks = qbanks.map((b) => {
+    const o = openOf.get(b.slug);
+    return o ? { ...b, open: { answered: Number(o.answered), total: o.total } } : b;
+  });
+  const titleOf = new Map(qbanks.map((b) => [b.slug, b.title]));
+  const continueList = openSessions.filter((o) => titleOf.has(o.slug));
+
   const known = new Set(FOLDERS.map((f) => f.key));
   const unfiled = qbanks.filter((b) => !known.has(folderOf.get(b.slug) ?? ""));
   const anyFiled = unfiled.length < qbanks.length;
@@ -145,6 +182,37 @@ export default async function Home() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <AnnouncementBar items={(announcements ?? []) as { id: string; message: string; level: string }[]} />
       <h1 className="text-2xl font-semibold">Question banks</h1>
+
+      {continueList.length > 0 && (
+        <section className="mt-8 rounded-lg border border-gray-200 dark:border-gray-800">
+          <div className="flex items-center gap-3 p-5">
+            <PlayCircle size={22} className="shrink-0 text-brand-500" />
+            <div>
+              <div className="font-medium">Continue where you left off</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {continueList.length} session{continueList.length === 1 ? "" : "s"} in progress
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-gray-200 p-4 dark:border-gray-800">
+            <div className="divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+              {continueList.map((o) => (
+                <Link
+                  key={o.slug}
+                  href={`/qbank/${o.slug}`}
+                  className="flex flex-col gap-0.5 px-4 py-2.5 text-sm hover:bg-gray-50 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4 dark:hover:bg-gray-900"
+                >
+                  <span className="font-medium">{continueLabel(titleOf.get(o.slug) ?? o.slug)}</span>
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    {o.mode === "tutor" ? "Tutor" : "Exam"} · {Number(o.answered)} of {o.total} answered
+                    <ChevronRight size={14} className="text-gray-400" />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="mt-8 space-y-3">
         {!qbanks.length ? (

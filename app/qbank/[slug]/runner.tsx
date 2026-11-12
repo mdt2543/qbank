@@ -39,6 +39,7 @@ type Answer = {
   correctId: string;
   explanation: string | null;
   rationales: Record<string, string | null>;
+  seconds?: number | null; // time spent on the question (review only; null on old attempts)
 };
 
 type ReviewRow = {
@@ -48,7 +49,17 @@ type ReviewRow = {
   correct_choice_id: string;
   explanation: string | null;
   rationales: Record<string, string | null> | null;
+  seconds_spent?: number | null; // added in migration_037
 };
+
+// an answer given in less time than this counts as rushed on the review page
+const RUSHED_SECONDS = 15;
+const isRushed = (a?: Answer) =>
+  !!a?.selectedId && a.seconds != null && a.seconds < RUSHED_SECONDS;
+// and one that took longer than this is marked "Over 2 min"
+const SLOW_SECONDS = 120;
+const isSlow = (a?: Answer) =>
+  !!a?.selectedId && a.seconds != null && a.seconds > SLOW_SECONDS;
 
 // which case and session a question's objective belongs to (for "By session" in review)
 type QSession = {
@@ -59,7 +70,7 @@ type QSession = {
   session_starts_at: string | null;
 };
 
-type ReviewView = "all" | "wrong" | "session";
+type ReviewView = "all" | "wrong" | "rushed" | "slow" | "session";
 
 type HistoryRow = {
   id: string;
@@ -84,6 +95,7 @@ function toAnswers(rev: ReviewRow[]) {
       correctId: r.correct_choice_id,
       explanation: r.explanation,
       rationales: r.rationales ?? {},
+      seconds: r.seconds_spent ?? null,
     };
   }
   return a;
@@ -172,7 +184,11 @@ export default function Runner({
   const [jumpscaresOn, setJumpscaresOn] = useState(jumpscares);
   const reviewScroll = useRef<HTMLDivElement>(null);
   const [topics, setTopics] = useState<Record<string, { name: string; description: string | null }>>({});
-  const timer = useRef<number>(Date.now());
+  const timer = useRef<number>(Date.now()); // when the current visit to this question began
+  // time from earlier visits to each question (ms), so a revisit adds to it instead of replacing it
+  const spent = useRef<Record<string, number>>({});
+  const secondsOn = (qid: string) =>
+    Math.round(((spent.current[qid] ?? 0) + Date.now() - timer.current) / 1000);
 
   async function start() {
     setPhase("loading");
@@ -370,6 +386,7 @@ export default function Runner({
     setPanelTab("review");
     setCalcOpen(false);
     setScore(null);
+    spent.current = {};
     timer.current = Date.now();
     setPhase("active");
   }
@@ -381,7 +398,7 @@ export default function Runner({
       p_attempt_id: attemptId,
       p_question_id: q.id,
       p_choice_id: selected,
-      p_seconds: Math.round((Date.now() - timer.current) / 1000),
+      p_seconds: secondsOn(q.id),
     });
     if (error) return setError(error.message);
 
@@ -406,7 +423,7 @@ export default function Runner({
       p_attempt_id: attemptId,
       p_question_id: q.id,
       p_choice_id: choiceId,
-      p_seconds: Math.round((Date.now() - timer.current) / 1000),
+      p_seconds: secondsOn(q.id),
     });
     if (error) {
       setError(error.message);
@@ -455,6 +472,11 @@ export default function Runner({
       // tutor mode: each question must be answered before moving past it
       const firstOpen = questions.findIndex((qq) => !answers[qq.id]);
       if (firstOpen !== -1 && i > firstOpen) return;
+    }
+    // bank the time spent on the question being left
+    const leaving = questions[index];
+    if (leaving) {
+      spent.current[leaving.id] = (spent.current[leaving.id] ?? 0) + Date.now() - timer.current;
     }
     setIndex(i);
     setSelected(null);
@@ -902,6 +924,18 @@ export default function Runner({
     // every question keeps its number from the attempt; "By session" adds a heading per session
     let list = questions.map((qq, i) => ({ qq, n: i + 1, heading: null as string | null }));
     if (view === "wrong") list = list.filter((x) => !answers[x.qq.id]?.isCorrect);
+    if (view === "rushed") list = list.filter((x) => isRushed(answers[x.qq.id]));
+    if (view === "slow") list = list.filter((x) => isSlow(answers[x.qq.id]));
+    // timing summary over answered questions that have a saved time (old attempts may have none)
+    const timed = questions
+      .map((qq) => answers[qq.id])
+      .filter((a): a is Answer => !!a?.selectedId && a.seconds != null);
+    const avgSeconds = timed.length
+      ? Math.round(timed.reduce((t, a) => t + (a.seconds ?? 0), 0) / timed.length)
+      : null;
+    const rushed = timed.filter((a) => isRushed(a));
+    const rushedWrong = rushed.filter((a) => !a.isCorrect).length;
+    const slow = timed.filter((a) => isSlow(a));
     if (view === "session") {
       const at = (x: (typeof list)[number]) => qSessions[x.qq.id];
       list = [...list].sort((x, y) => {
@@ -926,6 +960,8 @@ export default function Runner({
     const VIEWS: { key: ReviewView; label: string }[] = [
       { key: "all", label: "Entire session" },
       { key: "wrong", label: "Wrong answers only" },
+      ...(timed.length ? [{ key: "rushed" as const, label: `Rushed (${rushed.length})` }] : []),
+      ...(timed.length ? [{ key: "slow" as const, label: `Over 2 min (${slow.length})` }] : []),
       ...(multiSession ? [{ key: "session" as const, label: "By session" }] : []),
     ];
     const pickView = (v: ReviewView) => {
@@ -981,6 +1017,19 @@ export default function Runner({
                 Grade: {score.correct} / {score.total} ({pct}%)
               </p>
             )}
+            {avgSeconds != null && (
+              <p className="text-gray-300">
+                Average {fmtTime(avgSeconds)} per question ·{" "}
+                <span className={rushed.length ? "text-amber-300" : ""}>
+                  {rushed.length} rushed{rushed.length ? ` (${rushedWrong} wrong)` : ""}
+                </span>{" "}
+                ·{" "}
+                <span className={slow.length ? "text-sky-300" : ""}>
+                  {slow.length} over 2 min
+                  {slow.length ? ` (${slow.filter((a) => !a.isCorrect).length} wrong)` : ""}
+                </span>
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap justify-end gap-1.5">
             {VIEWS.map((v) => (
@@ -1006,6 +1055,16 @@ export default function Runner({
         >
           {view === "wrong" && list.length === 0 && (
             <p className="px-6 py-10 text-center text-gray-300">No wrong answers in this attempt.</p>
+          )}
+          {view === "rushed" && list.length === 0 && (
+            <p className="px-6 py-10 text-center text-gray-300">
+              No rushed answers in this attempt (under {RUSHED_SECONDS} seconds).
+            </p>
+          )}
+          {view === "slow" && list.length === 0 && (
+            <p className="px-6 py-10 text-center text-gray-300">
+              No answers in this attempt took over 2 minutes.
+            </p>
           )}
           {list.map(({ qq, n, heading }) => {
             const a = answers[qq.id];
@@ -1108,7 +1167,25 @@ export default function Runner({
                         <span className="font-semibold">Response </span>
                         {picked_ ? `${picked_.label}) ${picked_.body}` : "No response"}
                       </p>
-                      <span className={`ml-4 shrink-0 text-[0.8em] font-semibold ${tone.text}`}>{tone.label}</span>
+                      <span className="ml-4 flex shrink-0 items-center gap-2">
+                        {isRushed(a) && (
+                          <span
+                            className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.8em] font-semibold text-amber-200 ring-1 ring-amber-400/40"
+                            title={`Answered in under ${RUSHED_SECONDS} seconds`}
+                          >
+                            Rushed
+                          </span>
+                        )}
+                        {isSlow(a) && (
+                          <span
+                            className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[0.8em] font-semibold text-sky-200 ring-1 ring-sky-400/40"
+                            title={`Took over ${SLOW_SECONDS / 60} minutes to answer`}
+                          >
+                            Over 2 min
+                          </span>
+                        )}
+                        <span className={`text-[0.8em] font-semibold ${tone.text}`}>{tone.label}</span>
+                      </span>
                     </div>
                     {!ok && right && (
                       <p>
@@ -1129,7 +1206,17 @@ export default function Runner({
                         {topic.description ? ` — ${topic.description}` : ""}
                       </p>
                     )}
-                    <p className="text-right text-gray-400">{ok ? "1" : "0"} / 1</p>
+                    <div className="flex justify-between text-gray-400">
+                      <span>
+                        {a?.selectedId && a.seconds != null && (
+                          <>
+                            <span className="font-semibold text-gray-200">Time </span>
+                            <span className={isRushed(a) ? "text-amber-300" : isSlow(a) ? "text-sky-300" : ""}>{fmtTime(a.seconds)}</span>
+                          </>
+                        )}
+                      </span>
+                      <span>{ok ? "1" : "0"} / 1</span>
+                    </div>
                   </div>
                 </div>
               </section>

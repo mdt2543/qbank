@@ -90,6 +90,55 @@ const SORTS = [
 
 const num = (v: number | string | null | undefined) => Number(v ?? 0);
 
+type BankMeta = { slug: string; folder: string | null; subfolder: string | null };
+type BankGroup = { key: string; title: string; banks: BankRow[] };
+type FolderGroup = { key: string; title: string; groups: BankGroup[] };
+
+// Same folders as the home page: Case Review > Case 1..16, Exam Prep > Exam 1..6.
+const ADMIN_FOLDERS = [
+  { key: "case-review", title: "Case Review", prefix: "case", label: "Case", count: 16 },
+  { key: "exam-prep", title: "Exam Prep", prefix: "exam", label: "Exam", count: 6 },
+];
+
+// "Case 12 - Substance Use Disorders iLab Practice Questions" -> "Substance Use Disorders iLab"
+// "Exam 5 Practice QBank - Medium Difficulty" -> "Medium Difficulty"
+function shortBank(title: string) {
+  return title
+    .replace(/^Case \d+ - /, "")
+    .replace(/^Exam \d+ Practice QBank - /, "")
+    .replace(/ Practice Questions$/, "");
+}
+
+// Banks grouped into folders and subfolders (Case 7, Exam 5 ...); a group only appears once it has
+// a bank. Inside a group, banks follow course order (when their session first meets), then title.
+function groupBanks(banks: BankRow[], meta: BankMeta[], starts: Map<string, string | null>) {
+  const metaOf = new Map(meta.map((m) => [m.slug, m]));
+  const order = (a: BankRow, b: BankRow) =>
+    (starts.get(a.bank_slug) ?? "~").localeCompare(starts.get(b.bank_slug) ?? "~") ||
+    a.bank.localeCompare(b.bank);
+  const used = new Set<string>();
+  const folders: FolderGroup[] = ADMIN_FOLDERS.map((f) => {
+    const inFolder = banks.filter((b) => metaOf.get(b.bank_slug)?.folder === f.key);
+    const groups: BankGroup[] = Array.from({ length: f.count }, (_, i) => {
+      const key = `${f.prefix}-${i + 1}`;
+      return {
+        key,
+        title: `${f.label} ${i + 1}`,
+        banks: inFolder.filter((b) => metaOf.get(b.bank_slug)?.subfolder === key).sort(order),
+      };
+    });
+    const loose = inFolder.filter((b) => !groups.some((g) => g.banks.includes(b)));
+    if (loose.length) groups.push({ key: `${f.key}-loose`, title: `Other ${f.title}`, banks: loose.sort(order) });
+    inFolder.forEach((b) => used.add(b.bank_slug));
+    return { key: f.key, title: f.title, groups: groups.filter((g) => g.banks.length) };
+  });
+  const rest = banks.filter((b) => !used.has(b.bank_slug));
+  if (rest.length) {
+    folders.push({ key: "other", title: "Other", groups: [{ key: "other", title: "Not in a folder", banks: rest.sort(order) }] });
+  }
+  return folders.filter((f) => f.groups.length);
+}
+
 function ago(iso: string | null) {
   if (!iso) return "never";
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -148,6 +197,20 @@ export default async function Admin({
 
   const ov = (ovData as Overview[] | null)?.[0];
   const banks = (banksData ?? []) as BankRow[];
+
+  // folders for the Banks tab and the bank filter (both lookups are admin-only; an error means
+  // everything lands under "Other" and upload order stays)
+  const [{ data: metaData }, { data: startData }] = needBanks
+    ? await Promise.all([supabase.rpc("admin_all_banks"), supabase.rpc("qbank_session_starts")])
+    : [{ data: null }, { data: null }];
+  const starts = new Map(
+    ((startData ?? []) as { slug: string; starts_at: string | null }[]).map((r) => [r.slug, r.starts_at])
+  );
+  const folders = groupBanks(banks, (metaData ?? []) as BankMeta[], starts);
+  // position of each bank on the Banks tab, so a student's banks are listed in the same order
+  const bankRank = new Map(
+    folders.flatMap((f) => f.groups.flatMap((g) => g.banks)).map((b, i) => [b.bank_slug, i])
+  );
   const feedbackAll = (fbData ?? []) as FeedbackRow[];
 
   // --- students: one row per student, their banks inside ---
@@ -175,6 +238,13 @@ export default async function Admin({
       by.set(r.user_id, s);
     }
     students = [...by.values()];
+    for (const s of students) {
+      s.banks.sort(
+        (a, b) =>
+          (bankRank.get(a.bank_slug) ?? Infinity) - (bankRank.get(b.bank_slug) ?? Infinity) ||
+          a.bank.localeCompare(b.bank)
+      );
+    }
     if (bankFilter) students = students.filter((s) => s.banks.some((b) => b.bank_slug === bankFilter));
     if (q) {
       students = students.filter((s) =>
@@ -214,11 +284,17 @@ export default async function Admin({
         className="rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
       >
         <option value="">All banks</option>
-        {banks.map((b) => (
-          <option key={b.bank_slug} value={b.bank_slug}>
-            {b.bank}
-          </option>
-        ))}
+        {folders.flatMap((f) =>
+          f.groups.map((g) => (
+            <optgroup key={g.key} label={f.key === "other" ? g.title : `${f.title} · ${g.title}`}>
+              {g.banks.map((b) => (
+                <option key={b.bank_slug} value={b.bank_slug}>
+                  {shortBank(b.bank)}
+                </option>
+              ))}
+            </optgroup>
+          ))
+        )}
       </select>
       {tab === "students" && (
         <select
@@ -312,58 +388,106 @@ export default async function Admin({
       )}
 
       {tab === "banks" && (
-        <div className={`mt-6 ${box}`}>
-          <table className="w-full text-left text-sm">
-            <thead className={thead}>
-              <tr>
-                <th className={th}>Bank</th>
-                <th className={th}>Started</th>
-                <th className={th}>Completed</th>
-                <th className={th}>Class average</th>
-                <th className={th}>Questions seen</th>
-                <th className={th}>Sessions</th>
-                <th className={th}>Last active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-              {banks.map((b) => (
-                <tr key={b.bank_slug}>
-                  <td className="px-4 py-2">
-                    <Link href={href("students", { bank: b.bank_slug })} className="hover:underline">
-                      {b.bank}
-                    </Link>
-                    {!b.is_published && (
-                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                        Hidden
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 tabular-nums">{b.started}</td>
-                  <td className="px-4 py-2 tabular-nums">{b.completed}</td>
-                  <td className="px-4 py-2 tabular-nums">{b.class_avg === null ? "–" : `${b.class_avg}%`}</td>
-                  <td className="px-4 py-2 tabular-nums">
-                    {b.avg_seen === null ? "–" : b.avg_seen}
-                    <span className="text-gray-400"> of {b.question_count}</span>
-                  </td>
-                  <td className="px-4 py-2 tabular-nums">{b.sessions_submitted}</td>
-                  <td className={`px-4 py-2 ${muted}`}>{ago(b.last_active)}</td>
-                </tr>
-              ))}
-              {banks.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
-                    No banks yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          <p className={`border-t border-gray-200 px-4 py-2 text-xs dark:border-gray-800 ${muted}`}>
-            Started = students with at least one session. Completed = students with a submitted session
-            that has every question answered. Class average = the average of each student&apos;s most recent
-            completed session. Questions seen = the average number of distinct questions each starting
-            student has answered. Sessions = submitted sessions.
-          </p>
+        <div className="mt-6 space-y-8">
+          {banks.length === 0 && <p className={`text-sm ${muted}`}>No banks yet.</p>}
+          {folders.map((f) => {
+            // the group with the most recent activity opens by default
+            const latest = (g: BankGroup) => g.banks.reduce<string | null>((m, b) => latestOf(m, b.last_active), null);
+            const openKey = [...f.groups].sort((a, b) => (latest(b) ?? "").localeCompare(latest(a) ?? ""))[0]?.key;
+            const count = f.groups.reduce((n, g) => n + g.banks.length, 0);
+            return (
+              <section key={f.key}>
+                <h2 className="text-sm font-medium">
+                  {f.title}{" "}
+                  <span className={`font-normal ${muted}`}>
+                    · {count} bank{count === 1 ? "" : "s"}
+                  </span>
+                </h2>
+                <div className={`mt-2 divide-y divide-gray-200 dark:divide-gray-800 ${box}`}>
+                  {f.groups.map((g) => {
+                    const sessions = g.banks.reduce((n, b) => n + num(b.sessions_submitted), 0);
+                    const hidden = g.banks.filter((b) => !b.is_published).length;
+                    return (
+                      <details key={g.key} open={g.key === openKey} className="group">
+                        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-900">
+                          <div>
+                            <span className="mr-2 inline-block text-gray-400 transition-transform group-open:rotate-90">▸</span>
+                            <span className="text-sm font-medium">{g.title}</span>
+                            <span className={`ml-2 text-xs ${muted}`}>
+                              {g.banks.length} bank{g.banks.length === 1 ? "" : "s"}
+                            </span>
+                            {hidden > 0 && (
+                              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                                {hidden} hidden
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-xs tabular-nums ${muted}`}>
+                            {sessions} session{sessions === 1 ? "" : "s"} submitted · last active {ago(latest(g))}
+                          </div>
+                        </summary>
+                        <div className="overflow-x-auto border-t border-gray-200 dark:border-gray-800">
+                          <table className="w-full text-left text-sm">
+                            <thead className={thead}>
+                              <tr>
+                                <th className={th}>Bank</th>
+                                <th className={th}>Started</th>
+                                <th className={th}>Completed</th>
+                                <th className={th}>Class average</th>
+                                <th className={th}>Questions seen</th>
+                                <th className={th}>Sessions</th>
+                                <th className={th}>Last active</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                              {g.banks.map((b) => (
+                                <tr key={b.bank_slug}>
+                                  <td className="px-4 py-2">
+                                    <Link
+                                      href={href("students", { bank: b.bank_slug })}
+                                      className="hover:underline"
+                                      title={b.bank}
+                                    >
+                                      {shortBank(b.bank)}
+                                    </Link>
+                                    {!b.is_published && (
+                                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                                        Hidden
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2 tabular-nums">{b.started}</td>
+                                  <td className="px-4 py-2 tabular-nums">{b.completed}</td>
+                                  <td className="px-4 py-2 tabular-nums">
+                                    {b.class_avg === null ? "–" : `${b.class_avg}%`}
+                                  </td>
+                                  <td className="px-4 py-2 tabular-nums">
+                                    {b.avg_seen === null ? "–" : b.avg_seen}
+                                    <span className="text-gray-400"> of {b.question_count}</span>
+                                  </td>
+                                  <td className="px-4 py-2 tabular-nums">{b.sessions_submitted}</td>
+                                  <td className={`px-4 py-2 ${muted}`}>{ago(b.last_active)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+          <details className={`text-xs ${muted}`}>
+            <summary className="cursor-pointer">What the columns mean</summary>
+            <p className="mt-2 leading-relaxed">
+              Started = students with at least one session. Completed = students with a submitted session
+              that has every question answered. Class average = the average of each student&apos;s most
+              recent completed session. Questions seen = the average number of distinct questions each
+              starting student has answered. Sessions = submitted sessions.
+            </p>
+          </details>
         </div>
       )}
 

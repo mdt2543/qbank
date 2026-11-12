@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Ghost } from "lucide-react";
+import { Crown, Ghost } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import Avatar from "@/components/avatar";
 
@@ -83,7 +83,13 @@ export default async function Leaderboard() {
               />
               <span className="flex-1 truncate font-medium">
                 {r.display_name}
-                {r.is_me && <span className="ml-2 text-xs font-normal text-gray-500">you</span>}
+                {Number(r.place) === 1 && (
+                  <Crown
+                    className="ml-1.5 inline h-4 w-4 -translate-y-px fill-amber-400 text-amber-500"
+                    aria-label="First place"
+                  />
+                )}
+                {r.is_me &&<span className="ml-2 text-xs font-normal text-gray-500">you</span>}
               </span>
               <span
                 className="flex w-12 items-center justify-end gap-1 text-sm tabular-nums text-gray-500 dark:text-gray-400"

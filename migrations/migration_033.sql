@@ -42,7 +42,9 @@ insert into session_renames values
     (11, 'ECGs (Intro to Office Based Diagnostics) iLab', 'Intro to Office Based Diagnostics iLab', 12),
     (11, 'Introduction to Segmental Diagnosis: Sacrum', 'Introduction to Segmental Diagnosis - Sacrum', 5),
     (11, 'Lower Limb Synthesis & Integration with Ultrasound MM Lab', 'Lower Limb Synthesis and Integration with Ultrasound MM Lab', 8),
-    (11, 'Spirometry (Intro to Office Based Diagnostics) iLab', 'Intro to Office Based Diagnostics iLab', 3);
+    (11, 'Spirometry (Intro to Office Based Diagnostics) iLab', 'Intro to Office Based Diagnostics iLab', 3),
+    (12, 'Introduction to Segmental Diagnosis: Lower Extremity', 'Introduction to Segmental Diagnosis - Lower Extremity', 5),
+    (12, 'Substance Abuse iLab', 'Substance Use Disorders iLab', 12);
 
 do $$
 declare r record; n int;

@@ -98,7 +98,8 @@ const STEPS: Step[] = [
     title: "Your profile",
     body: (
       <p>
-        Choose a display name and upload a picture. They only appear on the leaderboard, next to
+        Choose a display name, then upload a picture or pick an animal. Everyone starts as a
+        platypus until they choose. Your name and picture only appear on the leaderboard, next to
         your total questions answered, and nothing else about you is shared with other students.
       </p>
     ),

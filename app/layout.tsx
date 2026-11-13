@@ -36,6 +36,7 @@ export default async function RootLayout({
   let showTutorial = false;
   let displayName: string | null = null;
   let avatarUrl: string | null = null;
+  let avatarAnimal: string | null = null;
   let colorTheme: string = DEFAULT_COLOR_THEME;
   let appearance: "light" | "dark" | null = null;
   if (user) {
@@ -57,6 +58,12 @@ export default async function RootLayout({
       .select("color_theme, appearance")
       .eq("user_id", user.id)
       .maybeSingle();
+    const { data: pet } = await supabase
+      .from("student_profiles")
+      .select("avatar_animal")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    avatarAnimal = pet?.avatar_animal ?? null;
     colorTheme = asColorValue(look?.color_theme);
     appearance = asAppearance(look?.appearance);
     if (prof?.avatar_path) {
@@ -82,7 +89,7 @@ export default async function RootLayout({
           disableTransitionOnChange
         >
           <ThemeSync appearance={appearance} />
-          <SiteHeader email={user?.email ?? null} displayName={displayName} avatarUrl={avatarUrl} isAdmin={isAdmin} />
+          <SiteHeader email={user?.email ?? null} displayName={displayName} avatarUrl={avatarUrl} avatarAnimal={avatarAnimal} isAdmin={isAdmin} />
           {children}
           {user && <TutorialGate show={showTutorial} />}
         </ThemeProvider>

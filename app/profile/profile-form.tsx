@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useTheme } from "next-themes";
 import Avatar from "@/components/avatar";
+import AnimalIcon, { ANIMALS, asAnimal, type AnimalKey } from "@/components/animal-icon";
 import { brandVars, COLOR_THEMES, customValue, parseCustom, SHADES, startingPoint } from "@/lib/color-themes";
 
 // Crop to a centered square and shrink, so uploads stay small whatever the original.
@@ -27,10 +28,10 @@ async function toSquareJpeg(file: File, size = 256): Promise<Blob> {
 
 export default function ProfileForm({
   userId,
-  email,
   initialName,
   initialPath,
   initialUrl,
+  initialAnimal,
   initialJumpscares,
   initialColor,
   initialAppearance,
@@ -40,6 +41,8 @@ export default function ProfileForm({
   initialName: string;
   initialPath: string | null;
   initialUrl: string | null;
+  // undefined = the animal column isn't there yet, so no picker
+  initialAnimal?: string | null;
   initialJumpscares: boolean;
   initialColor: string;
   initialAppearance: "light" | "dark" | null;
@@ -51,6 +54,8 @@ export default function ProfileForm({
   const [path, setPath] = useState(initialPath);
   const [preview, setPreview] = useState(initialUrl);
   const [blob, setBlob] = useState<Blob | null>(null);
+  const [animal, setAnimal] = useState<AnimalKey>(asAnimal(initialAnimal));
+  const [savedAnimal, setSavedAnimal] = useState<string | null>(initialAnimal ?? null);
   const [jumpscares, setJumpscares] = useState(initialJumpscares);
   const [savedJumpscares, setSavedJumpscares] = useState(initialJumpscares);
   const { setTheme } = useTheme();
@@ -145,6 +150,15 @@ export default function ProfileForm({
       setSaved({ color, mode });
     }
 
+    if (initialAnimal !== undefined && animal !== savedAnimal) {
+      const { error: petErr } = await supabase.rpc("save_avatar_animal", { p_animal: animal });
+      if (petErr) {
+        setBusy(false);
+        return setMsg({ ok: false, text: petErr.message });
+      }
+      setSavedAnimal(animal);
+    }
+
     // delete the previous picture file now that it is no longer used
     if (initialPath && initialPath !== nextPath) {
       await supabase.storage.from("avatars").remove([initialPath]);
@@ -157,12 +171,11 @@ export default function ProfileForm({
     router.refresh();
   }
 
-  const shown = name.trim() || email.split("@")[0];
 
   return (
     <div className="mt-8 space-y-6">
       <div className="flex items-center gap-5">
-        <Avatar url={preview} name={shown} size={96} />
+        <Avatar url={preview} animal={animal} size={96} />
         <div className="flex flex-wrap gap-2">
           <input
             ref={fileInput}
@@ -187,6 +200,33 @@ export default function ProfileForm({
           )}
         </div>
       </div>
+
+      {initialAnimal !== undefined && (
+        <div>
+          <p className="text-sm font-medium">Leaderboard animal</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {preview
+              ? "Shown instead of a picture if you remove your photo."
+              : "Without a profile picture, this is your icon. Everyone starts as a platypus."}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {ANIMALS.map((a) => (
+              <button
+                key={a.key}
+                type="button"
+                onClick={() => setAnimal(a.key)}
+                aria-pressed={animal === a.key}
+                title={a.label}
+                className={`rounded-full p-0.5 ring-2 transition ${
+                  animal === a.key ? "ring-brand-500" : "ring-transparent hover:ring-gray-300 dark:hover:ring-gray-700"
+                }`}
+              >
+                <AnimalIcon animal={a.key} size={40} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <label htmlFor="name" className="text-sm font-medium">

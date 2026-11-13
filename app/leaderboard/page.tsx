@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Crown, Ghost } from "lucide-react";
+import { Crown } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import Avatar from "@/components/avatar";
+import AnimalPrompt from "./animal-prompt";
 
 type Entry = {
   place: number | string;
   display_name: string;
   avatar_path: string | null;
+  avatar_animal?: string | null;
   total_questions: number | string;
   jumpscares: number | null;
   is_me: boolean;
@@ -27,6 +29,15 @@ export default async function Leaderboard() {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  // ask once for an animal: no picture and no animal chosen yet. A separate query, so an error
+  // (column not added yet) just means no prompt.
+  const { data: pic, error: picErr } = await supabase
+    .from("student_profiles")
+    .select("avatar_path, avatar_animal")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const askAnimal = !picErr && !pic?.avatar_path && !pic?.avatar_animal;
+
   // pictures are private: show them through short-lived signed links
   const paths = rows.map((r) => r.avatar_path).filter((p): p is string => !!p);
   const urls = new Map<string, string>();
@@ -37,13 +48,14 @@ export default async function Leaderboard() {
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
+      {askAnimal && <AnimalPrompt />}
       <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
         ← All banks
       </Link>
       <h1 className="mt-4 text-2xl font-semibold">Leaderboard</h1>
       <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
         Ranked by unique questions answered across all banks. Retaking a question doesn&apos;t
-        count twice. <Ghost className="inline h-4 w-4 align-text-bottom" aria-hidden /> is how
+        count twice. <span aria-hidden>😱</span> is how
         many times each student has been jump scared.
       </p>
 
@@ -78,7 +90,7 @@ export default async function Leaderboard() {
               </span>
               <Avatar
                 url={r.avatar_path ? urls.get(r.avatar_path) ?? null : null}
-                name={r.display_name}
+                animal={r.avatar_animal}
                 size={36}
               />
               <span className="flex-1 truncate font-medium">
@@ -95,7 +107,7 @@ export default async function Leaderboard() {
                 className="flex w-12 items-center justify-end gap-1 text-sm tabular-nums text-gray-500 dark:text-gray-400"
                 title="Times jump scared"
               >
-                <Ghost className="h-4 w-4" aria-hidden />
+                <span aria-hidden className="text-[15px] leading-none">😱</span>
                 <span className="sr-only">Jump scares:</span>
                 {r.jumpscares ?? 0}
               </span>

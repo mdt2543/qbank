@@ -28,6 +28,13 @@ export default async function Profile() {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  // separate query: an error (column not added yet) hides the animal picker
+  const { data: pet, error: petErr } = await supabase
+    .from("student_profiles")
+    .select("avatar_animal")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   let avatarUrl: string | null = null;
   if (prof?.avatar_path) {
     const { data } = await supabase.storage.from("avatars").createSignedUrl(prof.avatar_path, 3600);
@@ -51,6 +58,7 @@ export default async function Profile() {
         initialName={prof?.display_name ?? ""}
         initialPath={prof?.avatar_path ?? null}
         initialUrl={avatarUrl}
+        initialAnimal={petErr ? undefined : pet?.avatar_animal ?? null}
         initialJumpscares={js?.jumpscares ?? false}
         initialColor={asColorValue(look?.color_theme)}
         initialAppearance={asAppearance(look?.appearance)}

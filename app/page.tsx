@@ -5,6 +5,7 @@ import { ChevronRight, Folder, PlayCircle } from "lucide-react";
 import AnnouncementBar from "@/components/announcement-bar";
 import BankList, { type Bank } from "@/components/bank-card";
 import FolderPicker from "@/components/folder-picker";
+import { difficultyRank } from "@/lib/difficulty";
 
 type Sub = { key: string; title: string };
 
@@ -153,9 +154,14 @@ export default async function Home() {
   qbanks = [...qbanks].sort((a, b) => {
     const x = (subOf.get(a.slug) ?? "").startsWith("case-") ? startOf.get(a.slug) : null;
     const y = (subOf.get(b.slug) ?? "").startsWith("case-") ? startOf.get(b.slug) : null;
+    // practice exams (Exam 1-6 subfolders): Easy, then Medium, then Hard
+    const ex = (s: string) => (subOf.get(s) ?? "").startsWith("exam-");
+    const dx = ex(a.slug) ? difficultyRank(a.title) : 3;
+    const dy = ex(b.slug) ? difficultyRank(b.title) : 3;
     return (
       Number(!x) - Number(!y) ||
       (x && y ? x.localeCompare(y) : 0) ||
+      dx - dy ||
       (uploadRank.get(a.slug) ?? 0) - (uploadRank.get(b.slug) ?? 0)
     );
   });

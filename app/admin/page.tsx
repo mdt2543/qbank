@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import Announcements, { type AdminAnnouncement } from "./announcements";
 import { createClient } from "@/lib/supabase/server";
+import { difficultyRank } from "@/lib/difficulty";
 
 type Overview = {
   students: number | string;
@@ -115,6 +116,7 @@ function groupBanks(banks: BankRow[], meta: BankMeta[], starts: Map<string, stri
   const metaOf = new Map(meta.map((m) => [m.slug, m]));
   const order = (a: BankRow, b: BankRow) =>
     (starts.get(a.bank_slug) ?? "~").localeCompare(starts.get(b.bank_slug) ?? "~") ||
+    difficultyRank(a.bank) - difficultyRank(b.bank) ||
     a.bank.localeCompare(b.bank);
   const used = new Set<string>();
   const folders: FolderGroup[] = ADMIN_FOLDERS.map((f) => {

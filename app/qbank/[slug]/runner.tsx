@@ -78,7 +78,11 @@ type HistoryRow = {
   submitted_at: string;
   score_correct: number | null;
   score_total: number | null;
+  is_retry?: boolean; // a "Retry missed" session (migration_039)
 };
+
+// the attempt a "Retry missed" session would be built from
+type RetrySource = { id: string; missed: number; when: Date };
 
 const MODE_LABEL: Record<string, string> = {
   tutor: "Tutor",
@@ -154,6 +158,8 @@ export default function Runner({
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [deleting, setDeleting] = useState<HistoryRow | null>(null);
+  const [retrying, setRetrying] = useState<RetrySource | null>(null);
+  const [retryMode, setRetryMode] = useState<"tutor" | "exam" | "timed">("tutor");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reviewFrom, setReviewFrom] = useState<"results" | "history">("results");
@@ -190,13 +196,16 @@ export default function Runner({
   const secondsOn = (qid: string) =>
     Math.round(((spent.current[qid] ?? 0) + Date.now() - timer.current) / 1000);
 
+  const dbMode = (m: "tutor" | "exam" | "timed") =>
+    m === "timed" ? "timed_exam" : m === "exam" ? "timed" : "tutor";
+
   async function start() {
     setPhase("loading");
     setError(null);
 
     const { data: id, error: e1 } = await supabase.rpc("start_attempt", {
       p_qbank_slug: slug,
-      p_mode: mode === "timed" ? "timed_exam" : mode === "exam" ? "timed" : "tutor",
+      p_mode: dbMode(mode),
       p_filter: "all",
       p_count: null,
     });
@@ -205,6 +214,29 @@ export default function Runner({
       setPhase("idle");
       return;
     }
+    await launch(id as string, mode);
+  }
+
+  // "Retry missed": a new session with only the questions missed on one finished attempt
+  async function startRetry(sourceId: string, m: "tutor" | "exam" | "timed") {
+    setRetrying(null);
+    setMode(m);
+    setPhase("loading");
+    setError(null);
+    const { data: id, error: e1 } = await supabase.rpc("start_retry_attempt", {
+      p_attempt_id: sourceId,
+      p_mode: dbMode(m),
+    });
+    if (e1 || !id) {
+      setError(e1?.message ?? "Could not start the retry");
+      setPhase("idle");
+      return;
+    }
+    await launch(id as string, m);
+  }
+
+  // open a freshly created attempt (replacing any unfinished session on this bank)
+  async function launch(id: string, m: "tutor" | "exam" | "timed") {
     if (resumable) {
       await supabase.rpc("abandon_attempt", { p_attempt_id: resumable.attempt_id });
       setResumable(null);
@@ -222,12 +254,7 @@ export default function Runner({
     }
 
     const ids: string[] = attempt.question_ids;
-    await load(
-      id as string,
-      ids,
-      undefined,
-      mode === "timed" ? attempt.time_limit_seconds : null
-    );
+    await load(id, ids, undefined, m === "timed" ? attempt.time_limit_seconds : null);
   }
 
   async function resumeSession() {
@@ -663,6 +690,69 @@ export default function Runner({
         : "border-gray-300 dark:border-gray-700"
     }`;
 
+  const openRetry = (src: RetrySource) => {
+    setRetryMode(mode);
+    setRetrying(src);
+  };
+
+  // the "Retry missed" box: same mode choice as a normal start, then a new session
+  const retryBox = retrying && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="retry-title"
+        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-gray-900"
+      >
+        <h2 id="retry-title" className="text-lg font-semibold">
+          Retry missed questions
+        </h2>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          A new session with the {retrying.missed} question{retrying.missed === 1 ? "" : "s"} you
+          missed on {retrying.when.toLocaleDateString()} (answered wrong or left blank), in a new order.
+        </p>
+        <p className="mt-5 text-sm font-medium">Mode</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button onClick={() => setRetryMode("tutor")} className={pill(retryMode === "tutor")}>
+            Tutor
+          </button>
+          <button onClick={() => setRetryMode("exam")} className={pill(retryMode === "exam")}>
+            Exam
+          </button>
+          <button onClick={() => setRetryMode("timed")} className={pill(retryMode === "timed")}>
+            Timed exam
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          {retryMode === "tutor"
+            ? "See the answer and explanations after each question."
+            : retryMode === "exam"
+            ? "No feedback until you submit. You can change answers before then."
+            : `90 seconds per question (${fmtTime(retrying.missed * 90)} in all). It cannot be resumed.`}
+        </p>
+        {resumable && (
+          <p className="mt-3 rounded bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+            This replaces your unfinished session on this bank.
+          </p>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            onClick={() => setRetrying(null)}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => startRetry(retrying.id, retryMode)}
+            className="rounded-lg bg-black px-4 py-2 text-sm text-white dark:bg-white dark:text-black"
+          >
+            Start retry
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ---------------- start screen ----------------
   if (phase === "idle" || phase === "loading") {
     const available = counts ? counts.total ?? 0 : null;
@@ -766,6 +856,7 @@ export default function Runner({
               {history.map((h) => {
                 const total = h.score_total ?? 0;
                 const pct = total ? Math.round(((h.score_correct ?? 0) / total) * 100) : 0;
+                const missed = total - (h.score_correct ?? 0);
                 return (
                   <li key={h.id} className="flex items-center gap-4 px-4 py-3 text-sm">
                     <div className="flex-1">
@@ -776,11 +867,23 @@ export default function Runner({
                         </span>
                       </p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {h.is_retry && (
+                          <span className="font-medium text-brand-700 dark:text-brand-300">Missed questions · </span>
+                        )}
                         {MODE_LABEL[h.mode] ?? h.mode} ·{" "}
                         {new Date(h.submitted_at).toLocaleString()}
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {missed > 0 && (
+                        <button
+                          onClick={() => openRetry({ id: h.id, missed, when: new Date(h.submitted_at) })}
+                          disabled={phase === "loading"}
+                          className="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-brand-900 hover:bg-brand-100 disabled:opacity-40 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-100"
+                        >
+                          Retry missed ({missed})
+                        </button>
+                      )}
                       {isAdmin && (
                         <a
                           href={`/qbank/${slug}/print/${h.id}?auto=1`}
@@ -856,6 +959,7 @@ export default function Runner({
             </div>
           </div>
         )}
+        {retryBox}
       </main>
     );
   }
@@ -894,6 +998,16 @@ export default function Runner({
           >
             Review questions
           </button>
+          {attemptId && score.total - score.correct > 0 && (
+            <button
+              onClick={() =>
+                openRetry({ id: attemptId, missed: score.total - score.correct, when: finishedAt ?? new Date() })
+              }
+              className={plainBtn}
+            >
+              Retry missed ({score.total - score.correct})
+            </button>
+          )}
           <button onClick={start} className={plainBtn}>
             Start another
           </button>
@@ -907,6 +1021,7 @@ export default function Runner({
         <div className="mt-8">
           <FeedbackForm slug={slug} attemptId={attemptId} />
         </div>
+        {retryBox}
       </main>
     );
   }

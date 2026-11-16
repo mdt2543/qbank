@@ -8,14 +8,15 @@ import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
+// the main site address (not the per-deploy one), so link previews can load the picture
+const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+const defaultUrl = host ? `https://${host}` : "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Qbank",
+  title: "teterqbank",
   description: "Practice question banks",
+  openGraph: { title: "teterqbank", description: "Practice question banks", siteName: "teterqbank" },
 };
 
 const geistSans = Geist({

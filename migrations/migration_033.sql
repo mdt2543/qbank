@@ -1,7 +1,7 @@
 -- Performance page: rename each session so it matches the title of its bank on the site
 -- (the bank title without "Case N - " and " Practice Questions"). Case 11's three Intro to Office
 -- Based Diagnostics sessions share one bank, so they become one session with that bank's name.
--- Sessions with no bank (Small Group, cases 3-6, review/check-off labs) keep their names.
+-- Sessions with no bank (Small Group, cases 3-5, review/check-off labs) keep their names.
 -- Only renames case_objectives.session_title; no answers or scores change.
 -- Checks each count before renaming and stops without changing anything if one is off.
 -- Safe to re-run (a session already renamed is skipped). Re-running tools/case_map.py's
@@ -11,6 +11,10 @@ begin;
 
 create temp table session_renames (case_number int, old_title text, new_title text, expected int) on commit drop;
 insert into session_renames values
+    (6, 'Deep Palm of Hand MM Lab (Medical Morphology Lab)', 'Deep Palm of Hand', 7),
+    (6, 'Medicaid iLab', 'Medicaid', 2),
+    (6, 'Respiratory Structure and Function iLab', 'Respiratory Structure and Function', 18),
+    (6, 'Superficial Palm of Hand MM Lab', 'Superficial Palm of Hand', 10),
     (7, 'Adaptive Immunity iLab', 'Adaptive Immunity', 20),
     (7, 'Blood and Hematopoiesis iLab', 'Blood and Hematopoiesis', 10),
     (7, 'CS Cardiovascular and Respiratory Exam Lab', 'Cardiovascular and Respiratory Physical Exam', 10),

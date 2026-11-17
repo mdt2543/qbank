@@ -47,7 +47,7 @@ export default async function Leaderboard() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-12">
+    <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       {askAnimal && <AnimalPrompt />}
       <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
         ← All banks
@@ -81,11 +81,11 @@ export default async function Leaderboard() {
           return (
             <li
               key={`${r.place}-${r.display_name}`}
-              className={`flex items-center gap-4 px-4 py-3 ${
+              className={`flex items-center gap-2.5 px-3 py-3 sm:gap-4 sm:px-4 ${
                 r.is_me ? "bg-brand-50 dark:bg-brand-950" : ""
               } ${detached ? "border-t-4 border-t-gray-200 dark:border-t-gray-800" : ""}`}
             >
-              <span className="w-8 text-right text-sm font-semibold text-gray-500 dark:text-gray-400">
+              <span className="w-6 shrink-0 text-right text-sm font-semibold text-gray-500 sm:w-8 dark:text-gray-400">
                 {r.place}
               </span>
               <Avatar
@@ -93,7 +93,7 @@ export default async function Leaderboard() {
                 animal={r.avatar_animal}
                 size={36}
               />
-              <span className="flex-1 truncate font-medium">
+              <span className="min-w-0 flex-1 break-words font-medium leading-snug sm:truncate">
                 {r.display_name}
                 {Number(r.place) === 1 && (
                   <Crown
@@ -104,14 +104,14 @@ export default async function Leaderboard() {
                 {r.is_me &&<span className="ml-2 text-xs font-normal text-gray-500">you</span>}
               </span>
               <span
-                className="flex w-12 items-center justify-end gap-1 text-sm tabular-nums text-gray-500 dark:text-gray-400"
+                className="flex w-10 shrink-0 items-center justify-end gap-1 text-sm tabular-nums sm:w-12 text-gray-500 dark:text-gray-400"
                 title="Times jump scared"
               >
                 <span aria-hidden className="text-[15px] leading-none">😱</span>
                 <span className="sr-only">Jump scares:</span>
                 {r.jumpscares ?? 0}
               </span>
-              <span className="w-12 text-right text-sm tabular-nums">{r.total_questions}</span>
+              <span className="w-11 shrink-0 text-right text-sm tabular-nums sm:w-12">{r.total_questions}</span>
             </li>
           );
         })}

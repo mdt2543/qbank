@@ -250,7 +250,7 @@ export default async function Performance({
   const progressBanks = groupAttempts((attemptRows ?? []) as unknown as AttemptRow[]);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
         ← All banks
       </Link>

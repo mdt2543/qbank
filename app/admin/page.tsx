@@ -323,7 +323,7 @@ export default async function Admin({
   const muted = "text-gray-500 dark:text-gray-400";
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
       <Link href="/" className={`text-sm hover:underline ${muted}`}>
         ← All banks
       </Link>
@@ -513,7 +513,7 @@ export default async function Admin({
                     {s.sessions} sessions submitted · answered {ago(s.last)} · signed in {ago(s.signedIn)}
                   </div>
                 </summary>
-                <div className="border-t border-gray-200 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900/40">
+                <div className="overflow-x-auto border-t border-gray-200 bg-gray-50/50 px-4 py-2 dark:border-gray-800 dark:bg-gray-900/40">
                   <table className="w-full text-left text-sm">
                     <thead className={`text-xs ${muted}`}>
                       <tr>

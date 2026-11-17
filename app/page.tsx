@@ -185,7 +185,7 @@ export default async function Home() {
   const anyFiled = unfiled.length < qbanks.length;
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
       <AnnouncementBar items={(announcements ?? []) as { id: string; message: string; level: string }[]} />
       <h1 className="text-2xl font-semibold">Question banks</h1>
 

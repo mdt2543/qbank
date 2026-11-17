@@ -24,7 +24,9 @@ type Step = {
   action?: { href: string; label: string };
 };
 
-const STEPS: Step[] = [
+// phones get their own wording where the phone layout differs (no highlighter or notepad,
+// icons instead of words in the header)
+const stepsFor = (phone: boolean): Step[] => [
   {
     icon: Sparkles,
     title: "Welcome to teterqbank",
@@ -59,7 +61,14 @@ const STEPS: Step[] = [
   {
     icon: Highlighter,
     title: "Tools while you answer",
-    body: (
+    body: phone ? (
+      <p>
+        Strike out answer choices, zoom in or out, and open the <b>calculator</b> from the toolbar
+        above each question. The grid button shows every question at a glance so you can jump to
+        any of them. In exam sessions, the bookmark flags a question to come back to. Highlighting
+        and the notepad are on the computer version only.
+      </p>
+    ) : (
       <p>
         Highlight text in the question, strike out answer choices, and zoom in or out. The{" "}
         <b>calculator</b> (a full math keypad you can drag around) and the <b>notepad</b> are in the
@@ -86,7 +95,7 @@ const STEPS: Step[] = [
     title: "Performance",
     body: (
       <p>
-        See how you&apos;re doing by learning objective, by case, and by question bank, with your
+        {phone && <>Tap the chart icon at the top of the page. </>}See how you&apos;re doing by learning objective, by case, and by question bank, with your
         weakest areas listed first. The <b>Progress</b> tab shows how much you&apos;ve answered
         each week and how each case has improved.
       </p>
@@ -98,7 +107,7 @@ const STEPS: Step[] = [
     title: "Your profile",
     body: (
       <p>
-        Choose a display name, then upload a picture or pick an animal. Everyone starts as a
+        {phone && <>Tap your picture at the top of the page. </>}Choose a display name, then upload a picture or pick an animal. Everyone starts as a
         platypus until they choose. Your name and picture only appear on the leaderboard, next to
         your total questions answered, and nothing else about you is shared with other students.
       </p>
@@ -110,7 +119,7 @@ const STEPS: Step[] = [
     title: "Leaderboard",
     body: (
       <p>
-        See who has answered the most unique questions. Retaking a question doesn&apos;t count
+        {phone && <>Tap the trophy icon at the top of the page. </>}See who has answered the most unique questions. Retaking a question doesn&apos;t count
         twice. You only appear once you&apos;ve chosen a display name.
       </p>
     ),
@@ -149,6 +158,15 @@ export default function TutorialGate({ show }: { show: boolean }) {
   // when a link inside the tour is followed, the tour shrinks to a small button
   // instead of closing, so the student can carry on from the same step
   const [minimized, setMinimized] = useState(false);
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setPhone(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  const STEPS = stepsFor(phone);
 
   // first login: record that it has been shown, so it only appears once
   useEffect(() => {

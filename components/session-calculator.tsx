@@ -127,11 +127,14 @@ export default function SessionCalculator({
   open,
   onClose,
   storageKey,
+  fullScreen = false,
 }: {
   open: boolean;
   onClose: () => void;
   /** keeps the history on this device for the session, e.g. the attempt id */
   storageKey?: string;
+  /** phones: fill the screen (no dragging), with a big Close button */
+  fullScreen?: boolean;
 }) {
   const inputHost = useRef<HTMLDivElement>(null);
   const mfRef = useRef<MathfieldElement | null>(null);
@@ -280,7 +283,7 @@ export default function SessionCalculator({
 
   // dragging the window by its title bar
   function onDown(e: React.PointerEvent<HTMLDivElement>) {
-    if ((e.target as HTMLElement).closest("button")) return;
+    if (fullScreen || (e.target as HTMLElement).closest("button")) return;
     drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
     e.currentTarget.setPointerCapture(e.pointerId);
   }
@@ -297,8 +300,7 @@ export default function SessionCalculator({
     drag.current = null;
   }
 
-  const btn =
-    "flex h-9 items-center justify-center rounded text-sm font-medium transition-colors select-none";
+  const btn = `flex ${fullScreen ? "h-12 text-base" : "h-9"} items-center justify-center rounded text-sm font-medium transition-colors select-none`;
   const keep = (e: React.MouseEvent) => e.preventDefault(); // keep the cursor in the input
 
   const keypad: { label: React.ReactNode; act: Action; cls: string; title: string }[] = [
@@ -335,29 +337,48 @@ export default function SessionCalculator({
       role="dialog"
       aria-label="Calculator"
       data-no-shortcuts
-      style={{
-        left: pos.x,
-        top: pos.y,
-        // never taller than the space left on screen; scrolls inside if it has to
-        maxHeight: `calc(100vh - ${pos.y}px - 0.5rem)`,
-        display: open ? undefined : "none",
-      }}
-      className="fixed z-[55] w-[26rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-[#1b1e24] text-gray-100 shadow-2xl"
+      style={
+        fullScreen
+          ? { display: open ? undefined : "none" }
+          : {
+              left: pos.x,
+              top: pos.y,
+              // never taller than the space left on screen; scrolls inside if it has to
+              maxHeight: `calc(100vh - ${pos.y}px - 0.5rem)`,
+              display: open ? undefined : "none",
+            }
+      }
+      className={
+        fullScreen
+          ? "fixed inset-0 z-[55] overflow-y-auto bg-[#1b1e24] text-gray-100"
+          : "fixed z-[55] w-[26rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-[#1b1e24] text-gray-100 shadow-2xl"
+      }
     >
       <div
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
-        className="flex cursor-grab touch-none items-center justify-between bg-neutral-900 px-3 py-2 active:cursor-grabbing"
+        className={`flex items-center justify-between bg-neutral-900 px-3 ${
+          fullScreen ? "sticky top-0 z-10 py-2.5" : "cursor-grab touch-none py-2 active:cursor-grabbing"
+        }`}
       >
-        <span className="text-sm font-semibold">Calculator</span>
-        <button
-          onClick={onClose}
-          aria-label="Close calculator"
-          className="rounded p-1 text-gray-400 hover:bg-neutral-800 hover:text-white"
-        >
-          <X size={16} />
-        </button>
+        <span className={fullScreen ? "text-base font-semibold" : "text-sm font-semibold"}>Calculator</span>
+        {fullScreen ? (
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 rounded bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25"
+          >
+            <X size={16} /> Close
+          </button>
+        ) : (
+          <button
+            onClick={onClose}
+            aria-label="Close calculator"
+            className="rounded p-1 text-gray-400 hover:bg-neutral-800 hover:text-white"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {history.length > 0 && (

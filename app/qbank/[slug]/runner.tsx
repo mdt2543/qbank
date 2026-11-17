@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Eraser,
   Highlighter,
+  LayoutGrid,
   Minus,
   Strikethrough,
   X,
@@ -179,6 +180,20 @@ export default function Runner({
   const [navOpen, setNavOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<"review" | "notes">("review");
   const [notes, setNotes] = useState("");
+  // phones (narrower than a tablet) get a simpler session: no highlighter and no notepad
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setPhone(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  useEffect(() => {
+    if (!phone) return;
+    setTool((t) => (t === "highlight" || t === "erase" ? "none" : t));
+    setPanelTab("review");
+  }, [phone]);
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcLoaded, setCalcLoaded] = useState(false); // the calculator keeps its contents once opened
   const [navFilter, setNavFilter] = useState<"all" | "unanswered" | "answered" | "flagged">("all");
@@ -758,7 +773,7 @@ export default function Runner({
     const available = counts ? counts.total ?? 0 : null;
 
     return (
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
         <Link href="/" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
           ← All banks
         </Link>
@@ -858,7 +873,7 @@ export default function Runner({
                 const pct = total ? Math.round(((h.score_correct ?? 0) / total) * 100) : 0;
                 const missed = total - (h.score_correct ?? 0);
                 return (
-                  <li key={h.id} className="flex items-center gap-4 px-4 py-3 text-sm">
+                  <li key={h.id} className="flex flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:gap-4">
                     <div className="flex-1">
                       <p className="font-medium">
                         {h.score_correct ?? 0} / {total}{" "}
@@ -874,7 +889,7 @@ export default function Runner({
                         {new Date(h.submitted_at).toLocaleString()}
                       </p>
                     </div>
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
                       {missed > 0 && (
                         <button
                           onClick={() => openRetry({ id: h.id, missed, when: new Date(h.submitted_at) })}
@@ -968,7 +983,7 @@ export default function Runner({
   if (phase === "done" && score) {
     const pct = Math.round((score.correct / score.total) * 100);
     return (
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
         <h1 className="text-2xl font-semibold">Session complete</h1>
         <p className="mt-4 text-4xl font-semibold">{pct}%</p>
         <p className="mt-1 text-gray-600 dark:text-gray-400">
@@ -1093,8 +1108,8 @@ export default function Runner({
 
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
-        <div className="flex items-center justify-between bg-black px-4 py-2.5">
-          <span className="text-lg font-semibold tracking-tight">
+        <div className="flex items-center justify-between bg-black px-3 py-2 md:px-4 md:py-2.5">
+          <span className="text-base font-semibold tracking-tight md:text-lg">
             teterqbank <span className="font-normal text-gray-400">{kind.label}</span>
           </span>
           <Link href="/" className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white">
@@ -1102,18 +1117,18 @@ export default function Runner({
           </Link>
         </div>
 
-        <div className="flex items-center justify-between bg-brand-900 px-4 py-2.5">
-          <span className="flex items-center gap-3 text-lg font-semibold">
-            View Responses
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${kind.badge}`}>
+        <div className="flex items-center justify-between gap-2 bg-brand-900 px-3 py-2 md:px-4 md:py-2.5">
+          <span className="flex min-w-0 items-center gap-2 text-base font-semibold md:gap-3 md:text-lg">
+            <span className="truncate">View Responses</span>
+            <span className={`hidden shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 sm:inline ${kind.badge}`}>
               {kind.session} session
             </span>
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={iconBtn} title="Zoom out">
               <ZoomOut size={18} />
             </button>
-            <span className="w-12 text-center text-sm text-brand-100">{zoom}%</span>
+            <span className="hidden w-12 text-center text-sm text-brand-100 sm:block">{zoom}%</span>
             <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={iconBtn} title="Zoom in">
               <ZoomIn size={18} />
             </button>
@@ -1123,8 +1138,8 @@ export default function Runner({
           </div>
         </div>
 
-        <div className="flex items-start justify-between bg-slate-800 px-4 py-3 text-sm">
-          <div className="space-y-0.5">
+        <div className="flex flex-col gap-2 bg-slate-800 px-3 py-3 text-sm md:flex-row md:items-start md:justify-between md:px-4">
+          <div className="min-w-0 space-y-0.5">
             <p className="font-semibold">{title}</p>
             {finishedAt && <p className="text-gray-300">Submitted {finishedAt.toLocaleString()}</p>}
             {score && (
@@ -1146,7 +1161,7 @@ export default function Runner({
               </p>
             )}
           </div>
-          <div className="flex flex-wrap justify-end gap-1.5">
+          <div className="flex flex-wrap gap-1.5 md:justify-end">
             {VIEWS.map((v) => (
               <button
                 key={v.key}
@@ -1199,9 +1214,9 @@ export default function Runner({
               : null;
 
             return (
-              <section key={qq.id} className="border-b border-neutral-800 px-6 py-6">
+              <section key={qq.id} className="border-b border-neutral-800 px-3 py-5 md:px-6 md:py-6">
                 {heading && (
-                  <h2 className="-mx-6 -mt-6 mb-6 bg-slate-800/70 px-6 py-2.5 text-[0.85em] font-semibold text-brand-100">
+                  <h2 className="-mx-3 -mt-5 mb-5 bg-slate-800/70 px-3 py-2.5 text-[0.85em] font-semibold text-brand-100 md:-mx-6 md:-mt-6 md:mb-6 md:px-6">
                     {heading}
                   </h2>
                 )}
@@ -1277,12 +1292,12 @@ export default function Runner({
                     {omitted ? <Minus size={20} /> : ok ? <Check size={20} /> : <X size={20} />}
                   </div>
                   <div className="flex-1 space-y-1.5 p-3 text-[0.85em]">
-                    <div className="flex justify-between">
+                    <div className="flex flex-col-reverse gap-1 sm:flex-row sm:justify-between">
                       <p>
                         <span className="font-semibold">Response </span>
                         {picked_ ? `${picked_.label}) ${picked_.body}` : "No response"}
                       </p>
-                      <span className="ml-4 flex shrink-0 items-center gap-2">
+                      <span className="flex shrink-0 items-center gap-2 sm:ml-4">
                         {isRushed(a) && (
                           <span
                             className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.8em] font-semibold text-amber-200 ring-1 ring-amber-400/40"
@@ -1338,7 +1353,7 @@ export default function Runner({
             );
           })}
 
-          <div className="flex justify-center gap-3 px-6 py-8">
+          <div className="flex justify-center gap-3 px-3 py-8 md:px-6">
             <button
               onClick={closeReview}
               className="rounded bg-brand-700 px-5 py-2.5 hover:bg-brand-600"
@@ -1428,12 +1443,12 @@ export default function Runner({
     );
 
   const nextBtn =
-    "flex flex-1 items-center justify-center gap-3 bg-brand-700 py-4 text-lg font-medium hover:bg-brand-600 disabled:opacity-40";
+    "flex flex-1 items-center justify-center gap-2 bg-brand-700 py-3 text-base font-medium hover:bg-brand-600 disabled:opacity-40 md:gap-3 md:py-4 md:text-lg";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#15171c] text-gray-100">
-      <div className="flex items-center justify-between bg-black px-4 py-2.5">
-        <span className="text-lg font-semibold tracking-tight">
+      <div className="flex items-center justify-between bg-black px-3 py-2 md:px-4 md:py-2.5">
+        <span className="text-base font-semibold tracking-tight md:text-lg">
           teterqbank <span className="font-normal text-gray-400">{mode === "timed" ? "timed exam" : exam ? "exam" : "tutor"}</span>
         </span>
         <Link
@@ -1462,9 +1477,9 @@ export default function Runner({
         </Link>
       </div>
 
-      <div className="flex items-center justify-between bg-brand-900 px-4 py-2.5">
-        <span className="text-lg font-semibold">{title}</span>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3 bg-brand-900 px-3 py-2 md:px-4 md:py-2.5">
+        <span className="min-w-0 truncate text-sm font-semibold md:text-lg" title={title}>{title}</span>
+        <div className="flex shrink-0 items-center gap-2 md:gap-3">
           {mode === "timed" && remaining !== null && (
             <span
               className={`rounded px-3 py-1 font-mono text-sm font-semibold ${
@@ -1481,39 +1496,43 @@ export default function Runner({
           )}
           <button
             onClick={() => setConfirmOpen(true)}
-            className="rounded bg-white/15 px-4 py-1.5 text-sm hover:bg-white/25"
+            className="whitespace-nowrap rounded bg-white/15 px-3 py-1.5 text-sm hover:bg-white/25 md:px-4"
           >
-            {exam ? "Submit exam" : "End session"}
+            {exam ? (phone ? "Submit" : "Submit exam") : phone ? "End" : "End session"}
           </button>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between px-6 pt-4">
-            <h2 className="text-xl font-semibold">
+          <div className="flex items-center justify-between gap-2 px-3 pt-3 md:px-6 md:pt-4">
+            <h2 className="shrink-0 text-lg font-semibold md:text-xl">
               #{index + 1}
-              <span className="ml-2 text-sm font-normal text-gray-500">of {questions.length}</span>
+              <span className="ml-1.5 text-sm font-normal text-gray-500 md:ml-2">of {questions.length}</span>
             </h2>
-            <div className="flex items-center gap-1">
-              <button onClick={() => flip("highlight")} className={tb(tool === "highlight")} title="Highlight (select text)">
-                <Highlighter size={18} />
-              </button>
-              <button onClick={() => flip("erase")} className={tb(tool === "erase")} title="Remove highlight (select text)">
-                <Eraser size={18} />
-              </button>
+            <div className="flex items-center gap-0.5 md:gap-1">
+              {!phone && (
+                <>
+                  <button onClick={() => flip("highlight")} className={tb(tool === "highlight")} title="Highlight (select text)">
+                    <Highlighter size={18} />
+                  </button>
+                  <button onClick={() => flip("erase")} className={tb(tool === "erase")} title="Remove highlight (select text)">
+                    <Eraser size={18} />
+                  </button>
+                </>
+              )}
               <button onClick={() => flip("strike")} className={tb(tool === "strike")} title="Strike out answer choices">
                 <Strikethrough size={18} />
               </button>
-              <span className="mx-2 h-5 w-px bg-neutral-700" />
+              <span className="mx-2 hidden h-5 w-px bg-neutral-700 md:block" />
               <button onClick={() => setZoom((z) => Math.max(80, z - 10))} className={tb(false)} title="Zoom out">
                 <ZoomOut size={18} />
               </button>
-              <span className="w-12 text-center text-sm text-gray-300">{zoom}%</span>
+              <span className="hidden w-12 text-center text-sm text-gray-300 md:block">{zoom}%</span>
               <button onClick={() => setZoom((z) => Math.min(160, z + 10))} className={tb(false)} title="Zoom in">
                 <ZoomIn size={18} />
               </button>
-              <span className="mx-2 h-5 w-px bg-neutral-700" />
+              <span className="mx-2 hidden h-5 w-px bg-neutral-700 md:block" />
               <button
                 onClick={() => {
                   setCalcLoaded(true);
@@ -1524,33 +1543,45 @@ export default function Runner({
               >
                 <Calculator size={18} />
               </button>
-              <button
-                onClick={() => {
-                  setPanelTab("notes");
-                  setNavOpen(true);
-                }}
-                className={tb(navOpen && panelTab === "notes")}
-                title="Notepad"
-              >
-                <NotebookPen size={18} />
-              </button>
+              {!phone && (
+                <button
+                  onClick={() => {
+                    setPanelTab("notes");
+                    setNavOpen(true);
+                  }}
+                  className={tb(navOpen && panelTab === "notes")}
+                  title="Notepad"
+                >
+                  <NotebookPen size={18} />
+                </button>
+              )}
               {exam && (
                 <>
-                  <span className="mx-2 h-5 w-px bg-neutral-700" />
+                  <span className="mx-2 hidden h-5 w-px bg-neutral-700 md:block" />
                   <button
                     onClick={toggleFlag}
                     className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-neutral-800"
+                    title="Mark for Review"
                   >
                     <Bookmark size={18} className={flags[q.id] ? "fill-red-500 text-red-500" : ""} />
-                    Mark for Review
+                    <span className="hidden md:inline">Mark for Review</span>
                   </button>
                 </>
+              )}
+              {phone && (
+                <button
+                  onClick={() => setNavOpen((o) => !o)}
+                  className={tb(navOpen)}
+                  title={navOpen ? "Hide question list" : "Show question list"}
+                >
+                  <LayoutGrid size={18} />
+                </button>
               )}
             </div>
           </div>
 
           <div
-            className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-3"
+            className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-3 md:px-6"
             style={{ fontSize: `${(17 * zoom) / 100}px` }}
           >
             {error && <p className="mb-4 rounded bg-red-950 p-3 text-sm text-red-200">{error}</p>}
@@ -1664,16 +1695,32 @@ export default function Runner({
           </div>
         </div>
 
-        <div className="relative flex">
-          <button
-            onClick={() => setNavOpen((o) => !o)}
-            className="absolute right-full top-3 flex h-10 w-6 items-center justify-center rounded-l bg-neutral-800 text-gray-300 hover:bg-neutral-700"
-            title={navOpen ? "Hide question list" : "Show question list"}
-          >
-            {navOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
+        {/* on phones the question list fills the screen and has its own Close button */}
+        <div className={phone ? (navOpen ? "fixed inset-0 z-[56] flex" : "hidden") : "relative flex"}>
+          {!phone && (
+            <button
+              onClick={() => setNavOpen((o) => !o)}
+              className="absolute right-full top-3 flex h-10 w-6 items-center justify-center rounded-l bg-neutral-800 text-gray-300 hover:bg-neutral-700"
+              title={navOpen ? "Hide question list" : "Show question list"}
+            >
+              {navOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
+          )}
           {navOpen && (
-            <aside className="flex w-80 flex-col border-l border-neutral-800 bg-neutral-950">
+            <aside
+              className={`flex flex-col bg-neutral-950 ${phone ? "w-full" : "w-80 border-l border-neutral-800"}`}
+            >
+              {phone ? (
+                <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
+                  <span className="font-semibold">Questions</span>
+                  <button
+                    onClick={() => setNavOpen(false)}
+                    className="flex items-center gap-1.5 rounded bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25"
+                  >
+                    <X size={16} /> Close
+                  </button>
+                </div>
+              ) : (
               <div className="flex border-b border-neutral-800 text-sm">
                 {(
                   [
@@ -1694,12 +1741,18 @@ export default function Runner({
                   </button>
                 ))}
               </div>
+              )}
               {panelTab === "review" ? (
                 <>
                   <div className="border-b border-neutral-800 px-4 py-2.5">{legend(true)}</div>
                   <div className="flex-1 overflow-y-auto p-4">
-                    <div className="grid grid-cols-5 justify-items-center gap-3">
-                      {shown.map(({ qq, i }) => circle(qq, i, () => jump(i)))}
+                    <div className={`grid justify-items-center gap-3 ${phone ? "grid-cols-[repeat(auto-fill,minmax(3rem,1fr))]" : "grid-cols-5"}`}>
+                      {shown.map(({ qq, i }) =>
+                        circle(qq, i, () => {
+                          jump(i);
+                          if (phone) setNavOpen(false);
+                        })
+                      )}
                     </div>
                     {shown.length === 0 && (
                       <p className="text-center text-sm text-gray-500">No questions match.</p>
@@ -1739,9 +1792,9 @@ export default function Runner({
         <button
           onClick={() => jump(index - 1)}
           disabled={index === 0}
-          className="flex flex-1 items-center justify-center gap-3 bg-neutral-800 py-4 text-lg font-medium hover:bg-neutral-700 disabled:opacity-40"
+          className="flex flex-1 items-center justify-center gap-2 bg-neutral-800 py-3 text-base font-medium hover:bg-neutral-700 disabled:opacity-40 md:gap-3 md:py-4 md:text-lg"
         >
-          <ArrowLeft size={20} /> Previous Page
+          <ArrowLeft size={20} /> <span>Previous<span className="hidden md:inline"> Page</span></span>
         </button>
         {index < questions.length - 1 ? (
           <button
@@ -1750,7 +1803,7 @@ export default function Runner({
             title={!exam && !answer ? "Submit an answer to continue" : undefined}
             className={nextBtn}
           >
-            Next Page <ArrowRight size={20} />
+            <span>Next<span className="hidden md:inline"> Page</span></span> <ArrowRight size={20} />
           </button>
         ) : (
           <button onClick={() => setConfirmOpen(true)} className={nextBtn}>
@@ -1760,7 +1813,7 @@ export default function Runner({
       </div>
 
       {confirmOpen && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-20">
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/70 p-3 pt-6 md:p-4 md:pt-20">
           <div className="w-full max-w-4xl overflow-hidden rounded bg-[#1b1e24] shadow-xl">
             <div className="bg-brand-700 px-5 py-3 text-lg font-semibold">Confirm your submission</div>
             <div className="space-y-3 px-5 py-4 text-sm text-gray-300">
@@ -1803,6 +1856,7 @@ export default function Runner({
           open={calcOpen}
           onClose={() => setCalcOpen(false)}
           storageKey={attemptId ?? undefined}
+          fullScreen={phone}
         />
       )}
 

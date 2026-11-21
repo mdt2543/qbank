@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "@/components/avatar";
-import { ChartColumn, LogOut, ShieldCheck, Trophy } from "lucide-react";
+import { ChartColumn, LogOut, NotebookPen, ShieldCheck, Trophy } from "lucide-react";
 
 export default function SiteHeader({
   email,
@@ -46,6 +46,12 @@ export default function SiteHeader({
             <Trophy size={18} className="sm:hidden" />
             <span className="hidden sm:inline">Leaderboard</span>
           </Link>
+          {isAdmin && (
+            <Link href="/ctac" className={item} title="CTAC note practice (admins only)">
+              <NotebookPen size={18} className="sm:hidden" />
+              <span className="hidden sm:inline">CTAC</span>
+            </Link>
+          )}
           {isAdmin && (
             <Link href="/admin" className={item} title="Admin">
               <ShieldCheck size={18} className="sm:hidden" />

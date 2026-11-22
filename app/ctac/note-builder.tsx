@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Pause, Play, RotateCcw } from "lucide-react";
 import {
   DEFAULT_OPTIONS, ROS, RUBRIC, SECTIONS, fhxGenerations, rosCount,
   type Options, type RubricItem, type Section,
@@ -16,11 +15,11 @@ const STORE = "ctac-note-v2";
 // Subjective box on the real note, so the Subjective drill grades the history without it and the
 // ROS drill grades only the ROS.
 type Mode = "full" | "subjective" | "ros" | "objective";
-const MODES: { key: Mode; label: string; boxes: Section[]; boxLabel?: string; presets: number[] }[] = [
-  { key: "full", label: "Full note", boxes: SECTIONS.map((s) => s.key), presets: [15, 25, 30] },
-  { key: "subjective", label: "Subjective", boxes: ["subjective"], boxLabel: "Subjective (without ROS)", presets: [5, 10, 15] },
-  { key: "ros", label: "ROS", boxes: ["subjective"], boxLabel: "Subjective: ROS", presets: [2, 3, 5] },
-  { key: "objective", label: "Objective", boxes: ["objective"], presets: [3, 5, 10] },
+const MODES: { key: Mode; label: string; boxes: Section[]; boxLabel?: string }[] = [
+  { key: "full", label: "Full note", boxes: SECTIONS.map((s) => s.key) },
+  { key: "subjective", label: "Subjective", boxes: ["subjective"], boxLabel: "Subjective (without ROS)" },
+  { key: "ros", label: "ROS", boxes: ["subjective"], boxLabel: "Subjective: ROS" },
+  { key: "objective", label: "Objective", boxes: ["objective"] },
 ];
 const REPS = 3;
 
@@ -85,15 +84,14 @@ export default function NoteBuilder({ references }: { references: References }) 
   const [startedAt, setStartedAt] = useState<number | null>(null); // first keystroke
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [pasteOnce, setPasteOnce] = useState(false); // testing: lets the next paste into a note box through
   const [loaded, setLoaded] = useState(false);
   const [mode, setMode] = useState<Mode>("full");
   const cur = modeOf(mode);
   const boxes = SECTIONS.filter((s) => cur.boxes.includes(s.key));
 
-  // practice timer
-  const [minutes, setMinutes] = useState(25);
-  const [left, setLeft] = useState(25 * 60);
-  const [endAt, setEndAt] = useState<number | null>(null);
+  // stopwatch: runs from the first keystroke until Submit
+  const [now, setNow] = useState(() => Date.now());
 
   const submitted = submittedAt !== null;
 
@@ -106,7 +104,6 @@ export default function NoteBuilder({ references }: { references: References }) 
         if (s.opts) setOpts({ ...DEFAULT_OPTIONS, ...s.opts });
         if (typeof s.startedAt === "number") setStartedAt(s.startedAt);
         if (typeof s.submittedAt === "number") setSubmittedAt(s.submittedAt);
-        if (typeof s.minutes === "number") { setMinutes(s.minutes); setLeft(s.minutes * 60); }
         if (MODES.some((m) => m.key === s.mode)) setMode(s.mode);
       }
     } catch { /* no saved draft */ }
@@ -116,41 +113,26 @@ export default function NoteBuilder({ references }: { references: References }) 
   useEffect(() => {
     if (!loaded) return;
     try {
-      localStorage.setItem(STORE, JSON.stringify({ texts, opts, startedAt, submittedAt, minutes, mode }));
+      localStorage.setItem(STORE, JSON.stringify({ texts, opts, startedAt, submittedAt, mode }));
     } catch { /* storage blocked: the page still works */ }
-  }, [texts, opts, startedAt, submittedAt, minutes, mode, loaded]);
+  }, [texts, opts, startedAt, submittedAt, mode, loaded]);
 
-  // time's up submits the note, as in the exam room
+  const running = startedAt !== null && submittedAt === null;
   useEffect(() => {
-    if (endAt === null) return;
-    const t = setInterval(() => {
-      const s = Math.round((endAt - Date.now()) / 1000);
-      setLeft(Math.max(0, s));
-      if (s <= 0) { setEndAt(null); setSubmittedAt(Date.now()); setConfirmSubmit(false); }
-    }, 250);
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
-  }, [endAt]);
+  }, [running]);
+  const elapsed = startedAt === null ? 0 : Math.max(0, Math.floor(((submittedAt ?? now) - startedAt) / 1000));
 
-  const running = endAt !== null;
-  const startPause = () => {
-    if (running) { setEndAt(null); return; }
-    const secs = left > 0 ? left : minutes * 60;
-    setLeft(secs);
-    setEndAt(Date.now() + secs * 1000);
-  };
-  const setPreset = (m: number) => { setMinutes(m); setLeft(m * 60); setEndAt(null); };
-
-  const submit = () => { setSubmittedAt(Date.now()); setEndAt(null); setConfirmSubmit(false); };
+  const submit = () => { setSubmittedAt(Date.now()); setConfirmSubmit(false); };
   const newNote = () => {
     setTexts(EMPTY); setOverrides({}); setStartedAt(null); setSubmittedAt(null);
-    setLeft(minutes * 60); setEndAt(null);
   };
-  // switching parts starts a fresh attempt with that part's middle preset
+  // switching parts starts a fresh attempt
   const pickMode = (m: Mode) => {
-    const mins = modeOf(m).presets[1];
-    setMode(m); setMinutes(mins);
+    setMode(m);
     setTexts(EMPTY); setOverrides({}); setStartedAt(null); setSubmittedAt(null); setConfirmSubmit(false);
-    setLeft(mins * 60); setEndAt(null);
   };
   // mid-attempt, switching would throw away what's typed, so ask first
   const [pendingMode, setPendingMode] = useState<Mode | null>(null);
@@ -286,7 +268,6 @@ export default function NoteBuilder({ references }: { references: References }) 
   const chip = "rounded-full border px-2.5 py-1 text-xs transition";
   const on = "border-brand-600 bg-brand-600 text-white";
   const off = "border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800";
-  const timeLow = left <= 5 * 60 && left > 0;
 
   return (
     <div className={submitted && !drill ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]" : "mx-auto max-w-3xl"}>
@@ -374,24 +355,22 @@ export default function NoteBuilder({ references }: { references: References }) 
         </div>
       )}
       <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-        {/* timer: the room's clock, not part of the note */}
+        {/* stopwatch: not part of the note */}
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 sm:px-4 dark:border-gray-800 dark:bg-gray-900">
-          <span className={`font-mono text-2xl tabular-nums ${left === 0 ? "text-red-600" : timeLow ? "text-amber-600" : ""}`}>{mmss(left)}</span>
+          <span className="font-mono text-2xl tabular-nums">{mmss(elapsed)}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {submitted ? "stopped at Submit" : running ? "running" : "starts when you begin typing"}
+          </span>
           {!submitted && (
-            <>
-              <button onClick={startPause} title={running ? "Pause" : "Start"} className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800">
-                {running ? <Pause size={16} /> : <Play size={16} />}
-              </button>
-              <button onClick={() => setPreset(minutes)} title="Reset timer" className="rounded p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800">
-                <RotateCcw size={16} />
-              </button>
-              <div className="ml-auto flex gap-1">
-                {cur.presets.map((m) => (
-                  <button key={m} onClick={() => setPreset(m)} className={`${chip} ${minutes === m ? on : off}`}>{m} min</button>
-                ))}
-              </div>
-            </>
-          )}        </div>
+            <button
+              onClick={() => setPasteOnce((p) => !p)}
+              title="For testing the grading: lets one paste into a note box through"
+              className={`ml-auto rounded border px-2 py-1 text-xs ${pasteOnce ? "border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200" : "border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300"}`}
+            >
+              {pasteOnce ? "Paste allowed once: paste now (click to cancel)" : "Allow one paste"}
+            </button>
+          )}
+        </div>
 
         {/* the note, laid out like LearningSpace */}
         <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 sm:px-4 dark:border-gray-800">
@@ -428,8 +407,8 @@ export default function NoteBuilder({ references }: { references: References }) 
                   if (startedAt === null) setStartedAt(Date.now());
                   setTexts((t) => ({ ...t, [key]: e.target.value }));
                 }}
-                // type it yourself: no pasting or dropping text in
-                onPaste={(e) => e.preventDefault()}
+                // type it yourself: no pasting or dropping text in, unless one paste was allowed for testing
+                onPaste={(e) => { if (pasteOnce) setPasteOnce(false); else e.preventDefault(); }}
                 onDrop={(e) => e.preventDefault()}
                 rows={key === "signoff" ? 2 : boxes.length === 1 ? 20 : key === "subjective" || key === "objective" ? 12 : 5}
                 spellCheck={false}

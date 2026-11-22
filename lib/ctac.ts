@@ -114,6 +114,27 @@ function takesNoMeds(text: string): boolean {
 // dose and timing only apply when something is taken
 const unlessNoMeds = (re: RegExp): Part["re"] => ({ test: (t) => takesNoMeds(t) || re.test(t) });
 
+// the allergy lines: the "Allergies" block (heading to the next blank line), else any line about allergies
+function allergyLines(text: string): string[] {
+  const lines = text.split("\n");
+  const i = lines.findIndex((l) => /^\s*allergies\s*:?\s*$/i.test(l));
+  if (i >= 0) {
+    const out: string[] = [];
+    for (let j = i + 1; j < lines.length && lines[j].trim(); j++) out.push(lines[j]);
+    return out;
+  }
+  return lines.filter((l) => /allerg|\bNKDA\b|\bNKA\b/i.test(l));
+}
+// true when every allergy line is a denial (no food, environmental or drug allergies)
+function deniesAllergies(text: string): boolean {
+  const lines = allergyLines(text);
+  return lines.length > 0 && lines.every((l) => /\b(none|denies|no|NKDA|NKA)\b/i.test(l));
+}
+// a reaction is only asked for when the patient has an allergy, and it must be on the allergy lines
+const reactionIfAllergic: Part["re"] = {
+  test: (t) => deniesAllergies(t) || /reaction|rash|hives|swelling|anaphyla|sneez|itch|watery/i.test(allergyLines(t).join("\n")),
+};
+
 export const RUBRIC: RubricItem[] = [
   // subjective
   { id: "name", section: "subjective", label: "Patient name (first and last)", re: /\b(?:[A-Z][a-z]+ |(?:[A-Z]\. ?){1,3})[A-Z][a-z]+\b.{0,40}\b(is a|y\/o|year)/ }, // "A.T. Still" counts too
@@ -170,7 +191,8 @@ export const RUBRIC: RubricItem[] = [
   },
   {
     id: "allergies", section: "subjective", label: "Allergies",
-    parts: [p("Food", /food/i), p("Environment", /environment|seasonal|pollen|ragweed|dust|pet/i), p("Medications", /NKDA|drug|medication allerg|allergies.{0,40}medication/i), p("Reaction", /reaction|rash|hives|swelling|anaphyla|sneez|itch|watery/i)],
+    parts: [p("Food", /food/i), p("Environment", /environment|seasonal|pollen|ragweed|dust|pet/i), p("Medications", /NKDA|drug|medication allerg|allergies.{0,40}medication/i), p("Reaction", reactionIfAllergic)],
+    hint: "Give the reaction for each allergy. If the patient denies allergies, no reaction is needed.",
   },
   { id: "fhx", section: "subjective", label: "Family history (3 generations)" },
   {

@@ -39,9 +39,10 @@ export default async function CtacPage() {
         </Link>
       </div>
       <p className="mb-4 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
-        Write the SOAP note from memory in the same five boxes as LearningSpace, against the clock.
-        After you submit, you see your typing speed and the CTAC SOAP rubric. Practice the full note, or
-        time and grade just the Subjective, the ROS, or the Objective. Your draft stays in this browser only.
+        Write the SOAP note from memory in the same five boxes as LearningSpace. A stopwatch runs from
+        your first keystroke until you submit, then you see your time, typing speed and the CTAC SOAP
+        rubric. Practice the full note, or time and grade just the Subjective, the ROS, or the Objective.
+        Your draft stays in this browser only.
       </p>
       <NoteBuilder references={references} />
     </main>

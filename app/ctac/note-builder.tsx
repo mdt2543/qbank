@@ -84,7 +84,6 @@ export default function NoteBuilder({ references }: { references: References }) 
   const [startedAt, setStartedAt] = useState<number | null>(null); // first keystroke
   const [submittedAt, setSubmittedAt] = useState<number | null>(null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
-  const [pasteOnce, setPasteOnce] = useState(false); // testing: lets the next paste into a note box through
   const [loaded, setLoaded] = useState(false);
   const [mode, setMode] = useState<Mode>("full");
   const cur = modeOf(mode);
@@ -316,7 +315,7 @@ export default function NoteBuilder({ references }: { references: References }) 
               onPaste={(e) => e.preventDefault()}
               onDrop={(e) => e.preventDefault()}
               rows={Math.max(3, (item.reference ?? "").split("\n").length + 1)}
-              spellCheck={false}
+              spellCheck
               autoComplete="off"
               className="w-full resize-y rounded border border-gray-300 bg-gray-50 p-2 text-sm leading-relaxed dark:border-gray-700 dark:bg-gray-900"
             />
@@ -361,15 +360,6 @@ export default function NoteBuilder({ references }: { references: References }) 
           <span className="text-xs text-gray-500 dark:text-gray-400">
             {submitted ? "stopped at Submit" : running ? "running" : "starts when you begin typing"}
           </span>
-          {!submitted && (
-            <button
-              onClick={() => setPasteOnce((p) => !p)}
-              title="For testing the grading: lets one paste into a note box through"
-              className={`ml-auto rounded border px-2 py-1 text-xs ${pasteOnce ? "border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200" : "border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300"}`}
-            >
-              {pasteOnce ? "Paste allowed once: paste now (click to cancel)" : "Allow one paste"}
-            </button>
-          )}
         </div>
 
         {/* the note, laid out like LearningSpace */}
@@ -407,11 +397,9 @@ export default function NoteBuilder({ references }: { references: References }) 
                   if (startedAt === null) setStartedAt(Date.now());
                   setTexts((t) => ({ ...t, [key]: e.target.value }));
                 }}
-                // type it yourself: no pasting or dropping text in, unless one paste was allowed for testing
-                onPaste={(e) => { if (pasteOnce) setPasteOnce(false); else e.preventDefault(); }}
-                onDrop={(e) => e.preventDefault()}
+                // like the real note platform: pasting is allowed and the browser's spell check is on
                 rows={key === "signoff" ? 2 : boxes.length === 1 ? 20 : key === "subjective" || key === "objective" ? 12 : 5}
-                spellCheck={false}
+                spellCheck
                 autoComplete="off"
                 className="w-full resize-y rounded border border-gray-300 bg-gray-50 p-2 text-sm leading-relaxed dark:border-gray-700 dark:bg-gray-900"
               />

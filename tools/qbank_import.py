@@ -72,6 +72,19 @@ def norm(s):
     return re.sub(r"\s+", " ", s or "").strip().lower().rstrip(".")
 
 
+def drop_lab_words(title):
+    """'Case 11 - Gait MM Lab Practice Questions' -> 'Case 11 - Gait Practice Questions'.
+
+    Students see bank titles without the school's session-type words (iLab, Lab, MM Lab).
+    Only the display title changes; the slug still comes from the full name, so re-importing
+    a document updates the same bank and its pictures stay in the same folder."""
+    # "iLab" anywhere; "Lab" / "MM Lab" only as the session-type word at the end of the name,
+    # so a title like "Lab Values" keeps its "Lab"
+    t = re.sub(r"\s*\biLab\b", "", title or "", flags=re.I)
+    t = re.sub(r"\s*\b(?:MM\s+)?Lab\b(?=\s*(?:$|Practice Questions\b|\[))", "", t, flags=re.I)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def slugify(t):
     return re.sub(r"[^a-z0-9]+", "-", (t or "").lower()).strip("-") or "qbank"
 
@@ -489,7 +502,7 @@ def main():
     after = collections.Counter(keys[n]["letter"] for n in questions)
 
     outdir.mkdir(parents=True, exist_ok=True)
-    sql_path, imgdir, image_names = write_outputs(questions, keys, args.bank, slug, outdir, args.draft, args.folder, subfolder,
+    sql_path, imgdir, image_names = write_outputs(questions, keys, drop_lab_words(args.bank), slug, outdir, args.draft, args.folder, subfolder,
                                                   args.image_root)
 
     letters = sorted({L for q in questions.values() for L in q["choices"]})

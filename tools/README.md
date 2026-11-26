@@ -35,7 +35,9 @@ to go ahead, or add `--yes` to skip the question.
 
    Those session names come from the spreadsheet. Performance shows the bank titles instead:
    after running the sessions file, run `migrations\migration_033.sql` again (and add new
-   cases' renames to it) so the names match the banks.
+   cases' renames to it) so the names match the banks, then `migrations\migration_041.sql`,
+   which drops "iLab", "Lab" and "MM Lab" from session names and bank titles. New banks get
+   titles without those words automatically (`qbank_import.py`); their slugs keep them.
 
    Use the reworded spreadsheet, not the "(BACKUP original)" one. Case titles are kept
    generic on purpose: the tool drops patient names.
